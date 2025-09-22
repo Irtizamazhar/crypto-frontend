@@ -1,4 +1,4 @@
-// src/App.jsx
+// src/App.js
 import React, { Suspense, lazy, useState, useContext, createContext } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { WatchlistProvider } from "./context/WatchlistContext";
@@ -28,8 +28,10 @@ const Register   = lazy(() => import("./pages/Register"));
 const Profile    = lazy(() => import("./pages/Profile"));
 
 // Admin (separate area)
-const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
-const AdminLogin     = lazy(() => import("./pages/admin/Login"));
+const AdminDashboard    = lazy(() => import("./pages/admin/Dashboard"));
+const AdminLogin        = lazy(() => import("./pages/admin/Login"));
+// ✅ Point to the file you actually have: AdminLotteryPanel.js
+const AdminLotteryPanel = lazy(() => import("./pages/admin/AdminLotteryPanel"));
 
 /* ---------- Auth modal context ---------- */
 const AuthModalContext = createContext({ open: () => {}, close: () => {} });
@@ -81,6 +83,7 @@ function ProtectedRoute({ children }) {
   }
   return children;
 }
+
 function AdminRoute({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/admin/login" replace />;
@@ -146,6 +149,8 @@ export default function App() {
             {/* ---------- ADMIN ---------- */}
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+            {/* ✅ Lottery admin route uses AdminLotteryPanel */}
+            <Route path="/admin/lottery" element={<AdminRoute><AdminLotteryPanel /></AdminRoute>} />
 
             {/* fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
