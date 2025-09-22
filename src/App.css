@@ -1,0 +1,3 @@
+:root { --ring: 0 0% 100% / .08; }
+.route-fade-enter { opacity: 0; transform: translateY(8px); }
+.route-fade-enter-active { opacity: 1; transform: translateY(0); transition: .35s ease; }
