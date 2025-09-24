@@ -1,3 +1,4 @@
+// src/context/AuthContext.js
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { AuthAPI } from "../services/auth";
 
@@ -11,14 +12,14 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!token) return;
-    AuthAPI.me(token).then((data) => {
-      if (data.user) setUser(data.user);
-    }).catch(() => {
-      setToken("");
-      setUser(null);
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-    });
+    AuthAPI.me(token)
+      .then((data) => { if (data.user) setUser(data.user); })
+      .catch(() => {
+        setToken("");
+        setUser(null);
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+      });
   }, [token]);
 
   const login = async (email, password) => {
@@ -49,8 +50,17 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("user");
   };
 
+  // ✅ NEW: after updating profile on the server
+  const refreshMe = async () => {
+    const data = await AuthAPI.me(token);
+    if (data?.user) {
+      setUser(data.user);
+      localStorage.setItem("user", JSON.stringify(data.user));
+    }
+  };
+
   return (
-    <AuthCtx.Provider value={{ token, user, loading, login, register, logout }}>
+    <AuthCtx.Provider value={{ token, user, loading, login, register, logout, refreshMe, setUser }}>
       {children}
     </AuthCtx.Provider>
   );

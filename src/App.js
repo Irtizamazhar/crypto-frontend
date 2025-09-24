@@ -27,10 +27,15 @@ const Login      = lazy(() => import("./pages/Login"));
 const Register   = lazy(() => import("./pages/Register"));
 const Profile    = lazy(() => import("./pages/Profile"));
 
+// ✅ New public pages
+const Terms      = lazy(() => import("./pages/Terms"));
+const Privacy    = lazy(() => import("./pages/Privacy"));
+const AuthForgot = lazy(() => import("./pages/AuthForgot")); // request magic link
+const AuthMagic  = lazy(() => import("./pages/AuthMagic"));  // consume token → sign in
+
 // Admin (separate area)
 const AdminDashboard    = lazy(() => import("./pages/admin/Dashboard"));
 const AdminLogin        = lazy(() => import("./pages/admin/Login"));
-// ✅ Point to the file you actually have: AdminLotteryPanel.js
 const AdminLotteryPanel = lazy(() => import("./pages/admin/AdminLotteryPanel"));
 
 /* ---------- Auth modal context ---------- */
@@ -126,6 +131,13 @@ export default function App() {
             <Route element={<SiteLayout />}>
               {/* public */}
               <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              {/* ✅ new public routes */}
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/auth/forgot" element={<AuthForgot />} />
+              <Route path="/auth/magic" element={<AuthMagic />} />
 
               {/* protected */}
               <Route path="/signals"   element={<ProtectedRoute><Signals /></ProtectedRoute>} />
@@ -140,16 +152,11 @@ export default function App() {
               <Route path="/portfolio" element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-
-              {/* auth pages */}
-              <Route path="/login"    element={<Login />} />
-              <Route path="/register" element={<Register />} />
             </Route>
 
             {/* ---------- ADMIN ---------- */}
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-            {/* ✅ Lottery admin route uses AdminLotteryPanel */}
             <Route path="/admin/lottery" element={<AdminRoute><AdminLotteryPanel /></AdminRoute>} />
 
             {/* fallback */}

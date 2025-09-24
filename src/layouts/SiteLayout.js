@@ -28,25 +28,23 @@ function RouteContainer({ children }) {
 export default function SiteLayout() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
-
-      {/* Set the mobile dock height globally so FABs/panels can position above it */}
+      {/* Global mobile dock height so floating elements can sit above it */}
       <style>{`:root { --mobile-dock-h: 64px; }`}</style>
 
       <SiteNavbar />
 
-      {/* Wrap content + footer with extra bottom padding so they don't sit under the dock */}
+      {/* Give content/footer room above the bottom tab bar */}
       <div className="pb-[calc(var(--mobile-dock-h,0px)+env(safe-area-inset-bottom))]">
         <RouteContainer>
           <Outlet />
         </RouteContainer>
-
         <SiteFooter />
       </div>
 
-      {/* Global Mobile Bottom Nav (fixed on mobile) */}
+      {/* Fixed Mobile bottom nav */}
       <MobileTabBar height={64} />
 
-      {/* Chat bot FAB & panel (it uses --mobile-dock-h to stay above the bottom nav) */}
+      {/* Chat bot (positions itself using --mobile-dock-h) */}
       <AIChatBot />
     </div>
   );

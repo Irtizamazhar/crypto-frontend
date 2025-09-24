@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Bot, X, Send, User, Loader2 } from "lucide-react";
 import { fetchCoin, fetchMarketData, fetchNews, fetchKlines, fetchMarket } from "../services/api";
 
-// Enhanced technical indicators
+/* ---------- Indicators (unchanged) ---------- */
 const calculateRSI = (prices, period = 14) => {
   if (prices.length < period + 1) return 50;
   let gains = 0, losses = 0;
@@ -18,16 +18,16 @@ const calculateRSI = (prices, period = 14) => {
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
 };
-
 const calculateMACD = (prices) => {
   if (prices.length < 26) return { macd: 0, signal: 0, histogram: 0 };
   const ema12 = prices.slice(-12).reduce((a, b) => a + b, 0) / 12;
   const ema26 = prices.slice(-26).reduce((a, b) => a + b, 0) / 26;
   const macd = ema12 - ema26;
-  const signal = macd; // simplified demo signal
+  const signal = macd; // simplified demo
   return { macd, signal, histogram: macd - signal };
 };
 
+/* ---------- Component ---------- */
 export default function AIChatBot() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
@@ -45,6 +45,28 @@ export default function AIChatBot() {
   const [userName, setUserName] = useState(localStorage.getItem("chatbot_user_name") || "");
   const messagesEndRef = useRef(null);
 
+  /* ---------- Responsive behavior ---------- */
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" ? window.matchMedia("(max-width: 767px)").matches : false);
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    if (mql.addEventListener) mql.addEventListener("change", onChange);
+    else mql.addListener(onChange); // Safari fallback
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener("change", onChange);
+      else mql.removeListener(onChange);
+    };
+  }, []);
+
+  // Lock body scroll when panel is open (prevents background scroll on mobile)
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    if (open) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = prev || "";
+    return () => { document.body.style.overflow = prev || ""; };
+  }, [open]);
+
+  /* ---------- UI helpers ---------- */
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (userName) localStorage.setItem("chatbot_user_name", userName); }, [userName]);
 
@@ -55,6 +77,7 @@ export default function AIChatBot() {
     callback();
   };
 
+  /* ---------- Data helpers (unchanged) ---------- */
   async function getTrendingCoins(limit = 5) {
     try {
       const marketData = await fetchMarket({ per_page: 100 });
@@ -72,7 +95,6 @@ export default function AIChatBot() {
       return [];
     }
   }
-
   async function analyzeMarketCondition(symbol) {
     try {
       const klines = await fetchKlines(`${symbol}USDT`, "1h", 100);
@@ -103,7 +125,6 @@ export default function AIChatBot() {
       return null;
     }
   }
-
   function generatePrediction(analysis, symbol) {
     if (!analysis) return "Not enough data for prediction.";
     const { trend, trendStrength, currentPrice, volatility, rsi } = analysis;
@@ -137,7 +158,6 @@ export default function AIChatBot() {
 
     return `${predictionText} within ${timeFrame}.\n\nConfidence: ${confidence.toFixed(0)}% | RSI: ${rsi.toFixed(0)}\n\n⚠️ *Remember:* Predictions are probabilistic, not guarantees. Always use stop-losses.`;
   }
-
   function generateRecommendation(analysis, symbol) {
     if (!analysis) return "Not enough data for a reliable recommendation.";
     const { trend, volatility, currentPrice, sma20, rsi, macd } = analysis;
@@ -165,7 +185,6 @@ export default function AIChatBot() {
     recommendation += `\n\n⚡ *Trading Tip:* ${volatility > 5 ? "High volatility - use smaller position sizes." : "Normal market conditions."}`;
     return recommendation;
   }
-
   async function getMarketSentiment(symbol) {
     try {
       const news = await fetchNews(symbol, symbol);
@@ -186,6 +205,7 @@ export default function AIChatBot() {
     }
   }
 
+  /* ---------- Conversation ---------- */
   async function askAI(question) {
     const q = question.toLowerCase();
     const user = userName || "there";
@@ -385,14 +405,6 @@ export default function AIChatBot() {
       .replace(/💡/g, '<span class="text-yellow-200">💡</span>')
       .replace(/🚀/g, '<span class="text-green-300">🚀</span>');
 
-  const quickActions = [
-    { label: "BTC Prediction", query: "Predict Bitcoin price next week", icon: "🔮" },
-    { label: "Trending Coins", query: "What coins are trending now?", icon: "🔥" },
-    { label: "ETH Analysis", query: "Technical analysis for Ethereum", icon: "📊" },
-    { label: "Market Sentiment", query: "What's the market sentiment?", icon: "🌡️" },
-    { label: "Risk Assessment", query: "How risky is crypto now?", icon: "⚠️" },
-  ];
-
   return (
     <>
       {/* FAB – sits ABOVE the bottom nav (uses --mobile-dock-h on mobile) */}
@@ -407,20 +419,53 @@ export default function AIChatBot() {
         <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full" />
       </motion.button>
 
+      {/* Overlay/backdrop for the panel */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed right-6 w-96 h-[500px] glass rounded-2xl flex flex-col overflow-hidden z-50 shadow-xl border border-slate-700/50"
-            style={{
-              bottom: "calc(var(--mobile-dock-h, 0px) + env(safe-area-inset-bottom) + 84px)",
-            }}
+            key="chat-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Panel */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            key="chat-panel"
+            initial={isMobile ? { y: 40, opacity: 0 } : { y: 20, opacity: 0, scale: 0.95 }}
+            animate={isMobile ? { y: 0, opacity: 1 } : { y: 0, opacity: 1, scale: 1 }}
+            exit={isMobile ? { y: 40, opacity: 0 } : { y: 20, opacity: 0, scale: 0.95 }}
+            transition={{ type: "spring", damping: 22, stiffness: 260 }}
+            className={[
+              "fixed z-50 glass rounded-2xl flex flex-col overflow-hidden shadow-xl border border-slate-700/50",
+              isMobile
+                ? "left-0 right-0 mx-2 rounded-b-none rounded-t-2xl"
+                : "right-6"
+            ].join(" ")}
+            style={
+              isMobile
+                ? {
+                    bottom: `calc(var(--mobile-dock-h, 0px) + env(safe-area-inset-bottom))`,
+                    maxHeight: "min(78vh, 720px)",
+                  }
+                : {
+                    bottom: "24px",
+                    width: "420px",
+                    height: "520px",
+                  }
+            }
+            onClick={(e) => e.stopPropagation()} // avoid closing when clicking inside
           >
             {/* Header */}
-            <div className="flex justify-between items-center bg-gradient-to-r from-purple-800 to-blue-900 p-4 border-b border-slate-700">
+            <div className={`flex items-center justify-between p-4 border-b border-slate-700 ${isMobile ? "bg-slate-900/90" : "bg-gradient-to-r from-purple-800 to-blue-900"}`}>
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full">
                   <Bot size={16} className="text-white" />
@@ -430,24 +475,34 @@ export default function AIChatBot() {
                   <div className="text-xs text-slate-300">AI Predictive Trading Assistant</div>
                 </div>
               </div>
-              <button onClick={() => setOpen(false)} className="p-1 hover:bg-slate-700 rounded-full transition-colors" aria-label="Close chat">
-                <X size={18} className="text-slate-400" />
+              <button
+                onClick={() => setOpen(false)}
+                className="p-1 hover:bg-slate-700 rounded-full transition-colors"
+                aria-label="Close chat"
+              >
+                <X size={18} className="text-slate-300" />
               </button>
             </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-slate-900 to-slate-800">
               {messages.map((m, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className={`flex gap-3 ${m.from === "bot" ? "justify-start" : "justify-end"}`}>
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className={`flex gap-3 ${m.from === "bot" ? "justify-start" : "justify-end"}`}
+                >
                   {m.from === "bot" && (
                     <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full flex items-center justify-center">
                       <Bot size={16} className="text-white" />
                     </div>
                   )}
 
-                  <div className={`max-w-[75%] rounded-2xl p-3 ${m.from === "bot" ? "bg-slate-800 text-slate-200 rounded-bl-none border-l-2 border-cyan-500" : "bg-blue-600 text-white rounded-br-none border-r-2 border-blue-400"}`}>
-                    <div className="text-sm message-content" dangerouslySetInnerHTML={{ __html: formatMessage(m.text) }} />
-                    <div className={`text-xs mt-1 ${m.from === "bot" ? "text-slate-400" : "text-blue-200"}`}>{formatTime(m.timestamp)}</div>
+                  <div className={`max-w-[80%] md:max-w-[75%] rounded-2xl p-3 ${m.from === "bot" ? "bg-slate-800 text-slate-200 rounded-bl-none border-l-2 border-cyan-500" : "bg-blue-600 text-white rounded-br-none border-r-2 border-blue-400"}`}>
+                    <div className="text-[13px] md:text-sm message-content" dangerouslySetInnerHTML={{ __html: formatMessage(m.text) }} />
+                    <div className={`text-[11px] md:text-xs mt-1 ${m.from === "bot" ? "text-slate-400" : "text-blue-200"}`}>{formatTime(m.timestamp)}</div>
                   </div>
 
                   {m.from === "user" && (
@@ -495,7 +550,7 @@ export default function AIChatBot() {
                   className="p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center"
                   aria-label="Send message"
                 >
-                  {loading || typing ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                  {(loading || typing) ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                 </motion.button>
               </div>
 
@@ -511,8 +566,8 @@ export default function AIChatBot() {
                     key={index}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => { setInput(action.query); setTimeout(() => send(), 100); }}
-                    className="text-xs bg-slate-700 hover:bg-cyan-700 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
+                    onClick={() => { setInput(action.query); setTimeout(() => send(), 80); }}
+                    className="text-[11px] md:text-xs bg-slate-700 hover:bg-cyan-700 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
                   >
                     <span>{action.icon}</span>
                     {action.label}
@@ -524,6 +579,7 @@ export default function AIChatBot() {
         )}
       </AnimatePresence>
 
+      {/* Styles */}
       <style jsx>{`
         .glass { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
         .overflow-y-auto::-webkit-scrollbar { width: 6px; }
