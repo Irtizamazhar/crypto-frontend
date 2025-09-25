@@ -24,7 +24,6 @@ export default function CoinCard({ c }) {
     try {
       await navigator.clipboard.writeText(symbolU);
     } catch {
-      // no-op
     }
   };
 

@@ -42,7 +42,7 @@ function Chip({ c }) {
 
   return (
     <Link
-      to={`/coin/${c.id}`}
+      to={`/trade/${c.id}?tab=trade`}
       title={c.name}
       className={[
         "group min-w-[180px] md:min-w-[212px] px-3 py-3 rounded-xl",
@@ -192,7 +192,6 @@ export default function TrendingStrip({ items = [], loading = false }) {
 
   return (
     <section className="relative">
-      {/* Title row */}
       <div className="mb-2 flex items-center justify-between px-1">
         <h3 className="text-sm font-medium text-slate-300 tracking-wide">Trending Markets</h3>
         <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400">live 24h</span>
@@ -209,7 +208,7 @@ export default function TrendingStrip({ items = [], loading = false }) {
           {chips}
         </ul>
 
-        {/* Scoped scrollbar hide (WebKit + Firefox + old Edge) */}
+        {/* Scoped scrollbar hide */}
         <style>{`
           #tscroll { -ms-overflow-style: none; scrollbar-width: none; }
           #tscroll::-webkit-scrollbar { display: none; height: 0; }

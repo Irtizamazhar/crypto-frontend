@@ -1,10 +1,10 @@
-// src/components/AIChatBot.jsx
+
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, X, Send, User, Loader2 } from "lucide-react";
 import { fetchCoin, fetchMarketData, fetchNews, fetchKlines, fetchMarket } from "../services/api";
 
-// Enhanced technical indicators
+
 const calculateRSI = (prices, period = 14) => {
   if (prices.length < period + 1) return 50;
   let gains = 0, losses = 0;

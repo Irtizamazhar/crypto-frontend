@@ -144,3 +144,61 @@ export async function fetchNews(symbol, name) {
     return [];
   }
 }
+export async function fetchKlinesOHLC(symbol = "BTCUSDT", interval = "1m", limit = 500, { signal } = {}) {
+  const url = new URL(`${PROXY}/klines`);
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("interval", interval);
+  url.searchParams.set("limit", String(limit));
+  const r = await fetchWithTimeout(url.toString(), { signal }, 12000);
+  if (!r.ok) throw new Error("Failed klines");
+  const rows = await r.json();
+  return rows.map((k) => ({
+    openTime: Number(k[0]),
+    open: Number(k[1]),
+    high: Number(k[2]),
+    low: Number(k[3]),
+    close: Number(k[4]),
+    volume: Number(k[5]),
+    closeTime: Number(k[6]),
+  }));
+}
+
+/** Stream live candles; calls onUpdate({ ...kline, isFinal }) on every tick. */
+export function openKlineStream(symbol = "BTCUSDT", interval = "1m", onUpdate) {
+  let ws, alive = true, attempts = 0;
+  const url = `${WS}/${symbol.toLowerCase()}@kline_${interval}`;
+
+  const connect = () => {
+    if (!alive) return;
+    attempts++;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => { attempts = 0; };
+
+    ws.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data);
+        const k = m?.k; if (!k) return;
+        onUpdate({
+          openTime: k.t,
+          closeTime: k.T,
+          open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v,
+          isFinal: !!k.x,
+          symbol: (m?.s || symbol).toUpperCase(),
+          interval: k.i || interval,
+        });
+      } catch {}
+    };
+
+    ws.onclose = () => {
+      if (!alive) return;
+      const delay = Math.min(15000, 1000 * Math.pow(2, attempts));
+      setTimeout(connect, delay);
+    };
+
+    ws.onerror = () => { try { ws.close(); } catch {} };
+  };
+
+  connect();
+  return () => { alive = false; try { ws && ws.close(); } catch {} };
+}

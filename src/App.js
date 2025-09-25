@@ -6,6 +6,7 @@ import { LoadingProvider } from "./context/LoadingContext";
 import { AlertsProvider } from "./context/AlertsContext";
 import { ToastProvider, useToast } from "./components/ToastHub";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { PortfolioProvider } from "./context/PortfolioContext"; 
 
 // Layouts
 import SiteLayout from "./layouts/SiteLayout";
@@ -100,6 +101,7 @@ export default function App() {
     };
     return (
       <AuthProvider>
+        <PortfolioProvider>
         <WatchlistProvider>
           <LoadingProvider>
             <ToastProvider>
@@ -107,6 +109,7 @@ export default function App() {
             </ToastProvider>
           </LoadingProvider>
         </WatchlistProvider>
+        </PortfolioProvider>
       </AuthProvider>
     );
   };
@@ -157,7 +160,6 @@ export default function App() {
           </Routes>
         </Suspense>
 
-        {/* global sign-in modal */}
         <SignPromptModal open={authOpen} onClose={() => setAuthOpen(false)} />
       </AuthModalContext.Provider>
     </Providers>

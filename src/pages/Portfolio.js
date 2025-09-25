@@ -1,57 +1,150 @@
-// src/pages/Portfolio.js
-import React from "react";
-import { usePortfolio } from "../context/PortfolioContext";
-import { fmt } from "../utils/format";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-export default function Portfolio(){
-  const { cash, positions, equity, history, reset } = usePortfolio();
-  const pl = positions.reduce((a,p)=> a + (p.last - p.avg) * p.qty, 0);
+const PortfolioContext = createContext(null);
+const LS_KEY = "paper_trade_v1";
+const DEFAULT_CASH = 1000;
 
-  return (
-    <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl md:text-4xl font-black tracking-tight">Paper Trading</h1>
-          <p className="text-slate-400 text-sm">Practice with virtual USDT. Learn before you risk real money.</p>
-        </div>
-        <button className="btn-ghost text-rose-300" onClick={reset}>Reset</button>
-      </div>
+const computeEquity = (cash, positions) =>
+  cash +
+  positions.reduce((sum, p) => {
+    const last = Number.isFinite(p.last) ? p.last : p.avg;
+    return sum + last * p.qty;
+  }, 0);
 
-      <div className="grid sm:grid-cols-3 gap-3">
-        <div className="glass p-4 rounded-2xl"><div className="text-slate-400 text-sm">Cash</div><div className="text-2xl font-bold">{fmt(cash)}</div></div>
-        <div className="glass p-4 rounded-2xl"><div className="text-slate-400 text-sm">Equity</div><div className="text-2xl font-bold">{fmt(equity)}</div></div>
-        <div className="glass p-4 rounded-2xl"><div className="text-slate-400 text-sm">P/L (Unrealized)</div><div className={`text-2xl font-bold ${pl>=0?"text-emerald-400":"text-rose-400"}`}>{fmt(pl)}</div></div>
-      </div>
+export function PortfolioProvider({ children }) {
+  const [cash, setCash] = useState(DEFAULT_CASH);
+  const [positions, setPositions] = useState([]);
+  const [history, setHistory] = useState([]);
 
-      <div className="glass rounded-2xl overflow-hidden">
-        <div className="px-4 py-2 text-xs text-slate-400 border-b border-white/10">Positions</div>
-        {positions.length === 0 ? (
-          <div className="p-4 text-slate-400 text-sm">No positions yet. Use “Trade (Paper)” on a coin card or detail page.</div>
-        ) : positions.map(p => (
-          <div key={p.id} className="px-4 py-3 border-b border-white/5 text-sm flex items-center justify-between">
-            <div>{p.name} <span className="text-slate-400">({p.symbol})</span></div>
-            <div className="text-right">
-              <div>Qty: {p.qty}</div>
-              <div className="text-slate-400">Avg: {fmt(p.avg)} · Last: {fmt(p.last || p.avg)}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+  // load
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.cash != null) setCash(parsed.cash);
+        if (Array.isArray(parsed.positions)) setPositions(parsed.positions);
+        if (Array.isArray(parsed.history)) setHistory(parsed.history);
+      }
+    } catch {}
+  }, []);
 
-      <div className="glass rounded-2xl overflow-hidden">
-        <div className="px-4 py-2 text-xs text-slate-400 border-b border-white/10">History</div>
-        {history.length === 0 ? (
-          <div className="p-4 text-slate-400 text-sm">No trades yet.</div>
-        ) : history.map(h => (
-          <div key={h.ts} className="px-4 py-3 border-b border-white/5 text-sm flex items-center justify-between">
-            <div>{new Date(h.ts).toLocaleString()}</div>
-            <div className={`font-medium ${h.side==="BUY"?"text-emerald-400":"text-rose-400"}`}>{h.side}</div>
-            <div>{h.symbol}</div>
-            <div>Qty {h.qty}</div>
-            <div>Price {h.price}</div>
-          </div>
-        ))}
-      </div>
-    </div>
+  // save
+  useEffect(() => {
+    localStorage.setItem(LS_KEY, JSON.stringify({ cash, positions, history }));
+  }, [cash, positions, history]);
+
+  const mark = useCallback((symbol, last) => {
+    if (!symbol) return;
+    setPositions((prev) =>
+      prev.map((p) =>
+        p.symbol.toUpperCase() === symbol.toUpperCase()
+          ? { ...p, last: Number(last) }
+          : p
+      )
+    );
+  }, []);
+
+  const buy = useCallback((asset, price, qty) => {
+    price = Number(price);
+    qty = Number(qty);
+    if (!asset?.id || !Number.isFinite(price) || !Number.isFinite(qty) || qty <= 0) return;
+
+    setCash((c) => c - price * qty);
+    setPositions((prev) => {
+      const i = prev.findIndex((p) => p.id === asset.id);
+      if (i === -1) {
+        return [
+          ...prev,
+          {
+            id: asset.id,
+            symbol: String(asset.symbol || "").toUpperCase(),
+            name: asset.name || asset.id,
+            qty,
+            avg: price,
+            last: price,
+          },
+        ];
+      }
+      const p = prev[i];
+      const newQty = p.qty + qty;
+      const newAvg = (p.avg * p.qty + price * qty) / newQty;
+      const copy = prev.slice();
+      copy[i] = { ...p, qty: newQty, avg: newAvg, last: price };
+      return copy;
+    });
+    setHistory((h) => [
+      ...h,
+      { ts: Date.now(), side: "BUY", symbol: String(asset.symbol || "").toUpperCase(), qty, price },
+    ]);
+  }, []);
+
+  const sell = useCallback((asset, price, qty) => {
+    price = Number(price);
+    qty = Number(qty);
+    if (!asset?.id || !Number.isFinite(price) || !Number.isFinite(qty) || qty <= 0) return;
+
+    setPositions((prev) => {
+      const i = prev.findIndex((p) => p.id === asset.id);
+      if (i === -1) return prev; // nothing to sell
+      const p = prev[i];
+      const newQty = Math.max(0, p.qty - qty);
+      const copy = prev.slice();
+      if (newQty === 0) copy.splice(i, 1);
+      else copy[i] = { ...p, qty: newQty, last: price };
+      return copy;
+    });
+    setCash((c) => c + price * qty);
+    setHistory((h) => [
+      ...h,
+      { ts: Date.now(), side: "SELL", symbol: String(asset.symbol || "").toUpperCase(), qty, price },
+    ]);
+  }, []);
+
+  const reset = useCallback(() => {
+    setCash(DEFAULT_CASH);
+    setPositions([]);
+    setHistory([]);
+    localStorage.removeItem(LS_KEY);
+  }, []);
+
+  const equity = useMemo(() => computeEquity(cash, positions), [cash, positions]);
+
+  const value = useMemo(
+    () => ({ cash, positions, equity, history, buy, sell, mark, reset }),
+    [cash, positions, equity, history, buy, sell, mark, reset]
   );
+
+  return <PortfolioContext.Provider value={value}>{children}</PortfolioContext.Provider>;
+}
+
+// Fallback that avoids crashes if provider is missing
+const fallback = {
+  cash: 0,
+  positions: [],
+  equity: 0,
+  history: [],
+  buy: () => {},
+  sell: () => {},
+  mark: () => {},
+  reset: () => {},
+  __missingProvider: true,
+};
+
+export function usePortfolio() {
+  const ctx = useContext(PortfolioContext);
+  if (ctx == null) {
+    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+      console.warn("usePortfolio(): No <PortfolioProvider> found above in the tree.");
+    }
+    return fallback; // prevent destructure crash
+  }
+  return ctx;
 }
