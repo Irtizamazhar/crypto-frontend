@@ -1,112 +1,116 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { openMiniTickerStream } from "../services/api";
-
-const LS_ALERTS = "smart_alerts_v1";
-const LS_MUTED  = "smart_alerts_muted_v1";
+import { useAuth } from "./AuthContext";
+import {
+  listAlerts, createAlert, updateAlertApi, deleteAlert, clearAlerts, alertsLimits,
+} from "../services/alerts";
 
 const AlertsContext = createContext(null);
 
-function load(key, fallback) {
-  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
-}
-function save(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
-}
-
 export function AlertsProvider({ children, onToast }) {
-  const [alerts, setAlerts] = useState(() => load(LS_ALERTS, []));
-  const [muted, setMuted]   = useState(() => !!load(LS_MUTED, false));
-  const tickMapRef          = useRef(new Map()); // latest ticks by id
+  const { token } = useAuth();
 
-  // persist
-  useEffect(() => save(LS_ALERTS, alerts), [alerts]);
-  useEffect(() => save(LS_MUTED, muted), [muted]);
+  const [alerts, setAlerts] = useState([]);
+  const [limits, setLimits] = useState({ plan: "free", used: 0, max: 2 });
+  const [muted, setMuted]   = useState(false);
+  const tickMapRef          = useRef(new Map());
 
-  // ask Notification permission lazily
+  const load = useCallback(async () => {
+    if (!token) { setAlerts([]); setLimits({ plan: "free", used: 0, max: 2 }); return; }
+    const [{ alerts: rows }, lim] = await Promise.all([listAlerts(), alertsLimits()]);
+    setAlerts(rows || []);
+    setLimits(lim || { plan: "free", used: (rows || []).length, max: 2 });
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+
   const ensurePermission = useCallback(async () => {
     if (!("Notification" in window)) return false;
     if (Notification.permission === "granted") return true;
-    try {
-      const p = await Notification.requestPermission();
-      return p === "granted";
-    } catch { return false; }
+    try { return (await Notification.requestPermission()) === "granted"; }
+    catch { return false; }
   }, []);
 
-  const notify = useCallback(async (title, body) => {
+  const notify = useCallback((title, body) => {
     if (muted) return;
     onToast?.({ title, body });
     if (!("Notification" in window)) return;
     if (Notification.permission === "granted") {
-      new Notification(title, { body });
+      try { new Notification(title, { body }); } catch {}
     }
   }, [muted, onToast]);
 
-  const addAlert = useCallback((a) => {
-    const id = `${a.coinId}_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
-    setAlerts(prev => [{ ...a, id, enabled: true, createdAt: Date.now() }, ...prev]);
-  }, []);
+  const addAlert = useCallback(async (a) => {
+    if (!token) return;
+    try {
+      const { alert } = await createAlert(a);
+      setAlerts(prev => [alert, ...prev]);
+      const lim = await alertsLimits();
+      setLimits(lim);
+      return alert;
+    } catch (e) {
+      const msg = e?.message || "Failed to create alert";
+      onToast?.({ type: "error", text: msg });
+      throw e;
+    }
+  }, [token, onToast]);
 
-  const updateAlert = useCallback((id, patch) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
-  }, []);
+  const updateAlert = useCallback(async (id, patch) => {
+    if (!token) return;
+    const { alert } = await updateAlertApi(id, patch);
+    setAlerts(prev => prev.map(x => x.id === alert.id ? alert : x));
+    return alert;
+  }, [token]);
 
-  const removeAlert = useCallback((id) => {
+  const removeAlert = useCallback(async (id) => {
+    if (!token) return;
+    await deleteAlert(id);
     setAlerts(prev => prev.filter(a => a.id !== id));
-  }, []);
+    setLimits(await alertsLimits());
+  }, [token]);
 
-  const clearAll = useCallback(() => {
+  const clearAll = useCallback(async () => {
+    if (!token) return;
+    await clearAlerts();
     setAlerts([]);
-  }, []);
+    setLimits(await alertsLimits());
+  }, [token]);
 
-  const toggleMute = useCallback(() => setMuted(v => !v), []);
-
-  // Evaluate alerts on incoming ticks
+  // Client-side evaluation with the live mini-ticker stream
   const evalAlert = useCallback((a, tick) => {
-    if (!a.enabled) return false;
-    if (!tick) return false;
-    // metrics derived from miniTicker
+    if (!a.enabled || !tick) return false;
     const price = Number(tick.priceUsdt) || 0;
     const pct24 = Number(tick.changePercent24Hr) || 0;
     const vol24 = Number(tick.volumeQuote24h) || Number(tick.volumeUsd24Hr) || 0;
-
     switch (a.type) {
-      case "price":
-        return a.op === ">" ? price > a.value : price < a.value;
-      case "pct24h":
-        return a.op === ">" ? pct24 > a.value : pct24 < a.value;
-      case "vol24h":
-        return a.op === ">" ? vol24 > a.value : vol24 < a.value;
-      default:
-        return false;
+      case "price":  return a.op === ">" ? price > a.value : price < a.value;
+      case "pct24h": return a.op === ">" ? pct24 > a.value : pct24 < a.value;
+      case "vol24h": return a.op === ">" ? vol24 > a.value : vol24 < a.value;
+      default:       return false;
     }
   }, []);
 
-  // debounce so we don't spam multiple times per second
-  const cooldownRef = useRef(new Map()); // id -> ts
+  const cooldownRef = useRef(new Map()); // id->ts
   const COOLDOWN_MS = 60 * 1000;
 
   const onTick = useCallback((tick) => {
     tickMapRef.current.set(tick.id, tick);
     if (!alerts.length) return;
 
-    const ts = Date.now();
+    const now = Date.now();
     for (const a of alerts) {
-      if (!a.enabled) continue;
-      if (a.coinId !== tick.id) continue;
-
+      // our coinId is a lowercase base symbol (e.g., "btc")
+      if (a.coinId !== tick.id || !a.enabled) continue;
       const last = cooldownRef.current.get(a.id) || 0;
-      if (ts - last < COOLDOWN_MS) continue;
-
+      if (now - last < COOLDOWN_MS) continue;
       if (evalAlert(a, tick)) {
-        cooldownRef.current.set(a.id, ts);
-        notify(
-          `Alert: ${a.symbol.toUpperCase()}`,
-          a.type === "price"
-            ? `Price ${a.op} ${a.value} USDT (now ${priceFmt(tick.priceUsdt)})`
-            : a.type === "pct24h"
-              ? `24h Change ${a.op} ${a.value}% (now ${pctFmt(tick.changePercent24Hr)})`
-              : `24h Volume ${a.op} ${numFmt(a.value)} (now ${numFmt(tick.volumeQuote24h)})`
-        );
+        cooldownRef.current.set(a.id, now);
+        const title = `Alert: ${a.symbol.toUpperCase()}`;
+        const detail =
+          a.type === "price"  ? `price ${a.op} ${a.value} (now ${priceFmt(tick.priceUsdt)})` :
+          a.type === "pct24h" ? `24h % ${a.op} ${a.value} (now ${pctFmt(tick.changePercent24Hr)})` :
+                                `24h vol ${a.op} ${numFmt(a.value)} (now ${numFmt(tick.volumeQuote24h || tick.volumeUsd24Hr)})`;
+        notify(title, detail);
       }
     }
   }, [alerts, evalAlert, notify]);
@@ -117,36 +121,20 @@ export function AlertsProvider({ children, onToast }) {
   }, [onTick]);
 
   const value = useMemo(() => ({
-    alerts, addAlert, updateAlert, removeAlert, clearAll,
-    muted, toggleMute, ensurePermission,
-    latestFor: (coinId) => tickMapRef.current.get(coinId)
-  }), [alerts, addAlert, updateAlert, removeAlert, clearAll, muted, toggleMute, ensurePermission]);
+    alerts,
+    limits, // { plan, used, max }
+    addAlert, updateAlert, removeAlert, clearAll,
+    muted, toggleMute: () => setMuted(v => !v),
+    ensurePermission,
+    latestFor: (coinId) => tickMapRef.current.get(coinId),
+  }), [alerts, limits, addAlert, updateAlert, removeAlert, clearAll, muted, ensurePermission]);
 
-  return (
-    <AlertsContext.Provider value={value}>
-      {children}
-    </AlertsContext.Provider>
-  );
-}
-
-export function useAlerts() {
-  return useContext(AlertsContext);
+  return <AlertsContext.Provider value={value}>{children}</AlertsContext.Provider>;
 }
 
-// small formatters (reuse your utils if you prefer)
-function numFmt(n) {
-  const v = Number(n) || 0;
-  if (v >= 1e12) return (v/1e12).toFixed(2) + "T";
-  if (v >= 1e9)  return (v/1e9).toFixed(2) + "B";
-  if (v >= 1e6)  return (v/1e6).toFixed(2) + "M";
-  if (v >= 1e3)  return (v/1e3).toFixed(2) + "K";
-  return v.toFixed(2);
-}
-function pctFmt(p) {
-  const v = Number(p) || 0;
-  return `${v.toFixed(2)}%`;
-}
-function priceFmt(p) {
-  const v = Number(p) || 0;
-  return v >= 1 ? v.toFixed(2) : v.toFixed(6);
-}
+export function useAlerts() { return useContext(AlertsContext); }
+
+// format helpers
+function numFmt(n){const v=Number(n)||0;if(v>=1e12)return(v/1e12).toFixed(2)+"T";if(v>=1e9)return(v/1e9).toFixed(2)+"B";if(v>=1e6)return(v/1e6).toFixed(2)+"M";if(v>=1e3)return(v/1e3).toFixed(2)+"K";return v.toFixed(2)}
+function pctFmt(p){const v=Number(p)||0;return `${v.toFixed(2)}%`}
+function priceFmt(p){const v=Number(p)||0;return v>=1?v.toFixed(2):v.toFixed(6)}

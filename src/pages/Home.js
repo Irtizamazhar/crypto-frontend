@@ -1,4 +1,3 @@
-// src/pages/Home.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   fetchMarket, fetchKlines, convertFromUsdt, sanitizeCurrency,
@@ -15,6 +14,7 @@ import TrendingStrip from "../components/TrendingStrip";
 import { useLoading } from "../context/LoadingContext";
 import { useAuth } from "../context/AuthContext";
 import { motion } from "framer-motion";
+import Wallets from "../components/Wallets";
 
 /* helpers */
 const fmtPaper = (v) => `${Number(v || 0).toLocaleString()} P`;
@@ -70,7 +70,7 @@ function FancyActionCard({ to, title, subtitle, badge, icon, tone = "indigo" }) 
 }
 
 export default function Home() {
-  const { user, token } = useAuth();
+  const { user, token, getTrc20Wallet } = useAuth();
   const isAuthed = !!(user && token);
 
   const [list, setList]                 = useState([]);
@@ -85,13 +85,17 @@ export default function Home() {
   const [globalVolConv, setGlobalVolConv] = useState(0);
   const [usdtFactor, setUsdtFactor]     = useState(1);
 
-  // Paper/Fiat
+  // Paper/USDT Wallet State
   const [paper, setPaper]               = useState(0);
-  const [fiatUsd, setFiatUsd]           = useState(0);
+  const [usdtBalance, setUsdtBalance]   = useState(0); // Changed from fiatUsd to usdtBalance
   const [streak, setStreak]             = useState(0);
   const [lastClaimAt, setLastClaimAt]   = useState(null);
   const [canClaim, setCanClaim]         = useState(false);
   const [claiming, setClaiming]         = useState(false);
+
+  // TRC20 Wallet State
+  const [trc20Wallet, setTrc20Wallet]   = useState(null);
+  const [walletLoading, setWalletLoading] = useState(false);
 
   const [shownMarket, setShownMarket]   = useState(DEFAULT_SHOW.market);
 
@@ -100,18 +104,37 @@ export default function Home() {
   const stopSocketRef = useRef(null);
   const { start, stop } = useLoading();
 
+  // Fetch TRC20 Wallet and Paper Data
   useEffect(() => {
     let mounted = true;
+    
     if (!isAuthed) {
-      setPaper(0); setFiatUsd(0); setStreak(0); setLastClaimAt(null); setCanClaim(false);
+      setPaper(0); 
+      setUsdtBalance(0); // Reset USDT balance
+      setStreak(0); 
+      setLastClaimAt(null); 
+      setCanClaim(false);
+      setTrc20Wallet(null);
       return () => { mounted = false; };
     }
+    
     (async () => {
       try {
+        // Fetch Paper wallet data
         const w = await PaperAPI.wallet();
         if (!mounted) return;
         setPaper(Number(w.paper || 0));
-        setFiatUsd(Number(w.fiatUsd || 0));
+        
+        // Fetch TRC20 wallet data for on-chain USDT balance
+        setWalletLoading(true);
+        const trc20Data = await getTrc20Wallet();
+        if (!mounted) return;
+        
+        setTrc20Wallet(trc20Data);
+        // Set USDT balance from on-chain data
+        setUsdtBalance(Number(trc20Data?.usdt || 0));
+        
+        // Set streak and claim data
         setStreak(Number(w.streak || 0));
         const last = w.lastClaimAt ? new Date(w.lastClaimAt) : null;
         setLastClaimAt(last);
@@ -119,10 +142,24 @@ export default function Home() {
         const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
         const lastUTC  = last ? Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate()) : null;
         setCanClaim(lastUTC !== todayUTC);
-      } catch {}
+
+      } catch (error) {
+        console.error("Error fetching wallet data:", error);
+        if (!mounted) return;
+        setTrc20Wallet({
+          address: "Address not available",
+          trx: 0,
+          usdt: 0,
+          error: error.message
+        });
+        setUsdtBalance(0);
+      } finally {
+        if (mounted) setWalletLoading(false);
+      }
     })();
+    
     return () => { mounted = false; };
-  }, [isAuthed]);
+  }, [isAuthed, getTrc20Wallet]);
 
   const claimDaily = async () => {
     if (!isAuthed || !canClaim || claiming) return;
@@ -307,47 +344,23 @@ export default function Home() {
             <span className="bg-gradient-to-r from-indigo-400 via-cyan-400 to-fuchsia-400 bg-clip-text text-transparent">Every Coin</span>
           </h1>
           <p className="text-slate-400 max-w-2xl">
-            Earn <span className="text-amber-300 font-semibold">Paper</span> via streaks, invites & TapTap Paper. Fiat wallet supports deposit/withdraw (coming soon).
+            Earn <span className="text-amber-300 font-semibold">Paper</span> via streaks, invites &amp; TapTap Paper. USDT wallet supports deposit/withdraw.
           </p>
 
-          {/* Wallet + Daily reward */}
-          {isAuthed && (
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div className="relative rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 p-4 backdrop-blur-md">
-                <div className="absolute right-3 -top-2 text-[10px] px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Earn Paper</div>
-                <div className="text-sm">
-                  <div className="font-semibold">Daily Reward</div>
-                  <div className="text-slate-400 text-xs">Streak: <span className="text-slate-200">{streak} day(s)</span></div>
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="text-xs text-slate-400">Paper Wallet: <span className="text-slate-200">{fmtPaper(paper)}</span></div>
-                  <button
-                    onClick={claimDaily}
-                    disabled={claimedToday || claiming}
-                    className={`rounded-xl px-3 py-2 text-sm transition shadow-sm ${(!claimedToday && !claiming) ? "bg-emerald-600/80 hover:bg-emerald-600 text-white" : "bg-white/5 text-slate-400 cursor-not-allowed"}`}
-                  >
-                    {(!claimedToday && !claiming) ? "Claim +1 P" : "Come back tomorrow"}
-                  </button>
-                </div>
-              </div>
+          {/* Wallets block (updated with usdtBalance and trc20Address) */}
+          <Wallets
+            isAuthed={isAuthed}
+            paper={paper}
+            usdtBalance={usdtBalance} // Changed from fiatUsd to usdtBalance
+            streak={streak}
+            claimedToday={claimedToday}
+            claiming={claiming}
+            claimDaily={claimDaily}
+            fmtPaper={fmtPaper}
+            trc20Address={trc20Wallet?.address}
+          />
 
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 p-4 backdrop-blur-md">
-                <div className="text-sm font-semibold mb-2">Wallets</div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
-                    <div className="text-slate-400 text-xs">Fiat (USD)</div>
-                    <div className="mt-1 text-lg font-semibold">${Number(fiatUsd).toLocaleString()}</div>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
-                    <div className="text-slate-400 text-xs">Paper</div>
-                    <div className="mt-1 text-lg font-semibold">{fmtPaper(paper)}</div>
-                  </div>
-                </div>
-                <div className="mt-2 text-[11px] text-slate-400">Paper is earned in-app. Fiat is for deposit/withdraw (will be enabled later).</div>
-              </div>
-            </div>
-          )}
-
+          {/* Refresh row */}
           <div className="text-xs text-slate-400 flex flex-wrap items-center gap-4">
             <button onClick={onRefresh} className="px-3 py-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition">Refresh</button>
             {lastUpdated && <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>}
@@ -421,7 +434,7 @@ export default function Home() {
                   <button onClick={showMoreMarket} className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition">
                     {loading ? "Loading…" : "Show more coins"}
                   </button>
-                ) : <div className="text-slate-500 text-sm">You’re up to date.</div>}
+                ) : <div className="text-slate-500 text-sm">You're up to date.</div>}
               </div>
             </>
           ) : (

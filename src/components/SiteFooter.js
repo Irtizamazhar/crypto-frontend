@@ -1,105 +1,186 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Github, Twitter, Mail, ChevronRight } from "lucide-react";
+import { Github, Twitter, Mail, ChevronRight, ExternalLink } from "lucide-react";
 
 export default function SiteFooter() {
   const year = new Date().getFullYear();
 
   return (
     <footer className="mt-16">
-      {/* CTA Banner */}
+      {/* Enhanced CTA Banner */}
       <div className="mx-auto max-w-7xl px-4">
-        <div className="relative overflow-hidden rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-6 sm:p-7 shadow-[0_0_60px_-25px_rgba(34,211,238,.45)]">
-          {/* subtle lights */}
-          <div className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-cyan-500/20 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl" />
-          <div className="relative flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <h3 className="text-xl sm:text-2xl font-bold tracking-tight">
-                Join the CryptoSense community
+        <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-900/20 p-8 shadow-2xl shadow-cyan-500/10">
+          {/* Enhanced background effects */}
+          <div className="pointer-events-none absolute -top-32 -left-32 h-80 w-80 rounded-full bg-cyan-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-64 w-64 rounded-full bg-cyan-400/5 blur-3xl" />
+          
+          <div className="relative flex flex-col items-start gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <h3 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                Join the CryptoSense Community
               </h3>
-              <p className="text-sm text-slate-400">
-                Share insights on the Feed and earn Paper while you learn.
+              <p className="text-sm text-slate-300 max-w-md">
+                Share market insights, learn trading strategies, and earn Paper rewards while you grow your crypto knowledge.
               </p>
             </div>
-            <div className="flex w-full sm:w-auto flex-col sm:flex-row gap-2">
+            <div className="flex w-full sm:w-auto flex-col sm:flex-row gap-3">
               <NavLink
                 to="/feed"
-                className="group inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-white bg-cyan-600/90 hover:bg-cyan-600 transition"
+                className="group inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-semibold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 transition-all duration-200 shadow-lg hover:shadow-cyan-500/25 hover:scale-105"
               >
-                Open Feed
-                <ChevronRight size={16} className="ml-1 opacity-80 group-hover:translate-x-0.5 transition-transform" />
+                Explore Feed
+                <ChevronRight size={18} className="ml-2 opacity-80 group-hover:translate-x-1 transition-transform" />
               </NavLink>
               <NavLink
                 to="/paper"
-                className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-slate-100 bg-white/5 hover:bg-white/10 border border-white/10 transition"
+                className="inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-semibold text-slate-100 bg-white/10 hover:bg-white/15 border border-white/20 hover:border-white/30 transition-all duration-200 backdrop-blur-sm"
               >
-                Earn Paper
+                Start Earning
               </NavLink>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Footer Body */}
-      <div className="mt-8 border-t border-white/10 bg-slate-900/70 backdrop-blur">
-        <div className="mx-auto max-w-7xl px-4 py-10 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Brand */}
+      {/* Enhanced Footer Body */}
+      <div className="mt-6 border-t border-white/10 bg-gradient-to-b from-slate-900 to-slate-950">
+        <div className="mx-auto max-w-7xl px-4 py-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Enhanced Brand Section */}
+          <div className="col-span-2 lg:col-span-1 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg flex items-center justify-center">
+                <div className="h-6 w-6 rounded bg-white/20" />
+              </div>
+              <div>
+                <span className="text-xl font-black bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent">
+                  CryptoSense
+                </span>
+                <div className="text-xs text-cyan-400 font-medium mt-0.5">PRO TRADING PLATFORM</div>
+              </div>
+            </div>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Advanced tools for market analysis, strategy development, and portfolio tracking — all designed for crypto enthusiasts.
+            </p>
+            <div className="flex items-center gap-2">
+              <a 
+                className="rounded-xl p-2.5 bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-500/30 transition-all duration-200 group" 
+                href="#" 
+                aria-label="Twitter"
+              >
+                <Twitter size={18} className="text-slate-400 group-hover:text-cyan-400" />
+              </a>
+              <a 
+                className="rounded-xl p-2.5 bg-white/5 hover:bg-slate-500/20 border border-white/10 hover:border-slate-400/30 transition-all duration-200 group" 
+                href="#" 
+                aria-label="GitHub"
+              >
+                <Github size={18} className="text-slate-400 group-hover:text-slate-300" />
+              </a>
+              <a 
+                className="rounded-xl p-2.5 bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 transition-all duration-200 group" 
+                href="mailto:hello@cryptosense.app" 
+                aria-label="Email"
+              >
+                <Mail size={18} className="text-slate-400 group-hover:text-red-400" />
+              </a>
+            </div>
+          </div>
+
+          {/* Enhanced App Links */}
+          <div className="space-y-4">
+            <div className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Platform</div>
+            <ul className="space-y-3">
+              {[
+                { name: "Market Scanner", path: "/" },
+                { name: "Trading Signals", path: "/signals" },
+                { name: "Paper Trading", path: "/portfolio" },
+                { name: "$1 Challenge", path: "/game" },
+                { name: "Earn Rewards", path: "/paper" },
+                { name: "Community Feed", path: "/feed" },
+                { name: "Dashboard", path: "/dashboard" },
+                { name: "Watchlist", path: "/watchlist" },
+                { name: "Price Alerts", path: "/alerts" }
+              ].map((item) => (
+                <li key={item.name}>
+                  <NavLink 
+                    className="text-sm text-slate-400 hover:text-cyan-400 transition-colors duration-200 flex items-center gap-1 group"
+                    to={item.path}
+                  >
+                    {item.name}
+                    <ExternalLink size={12} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Enhanced Resources */}
+          <div className="space-y-4">
+            <div className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Resources</div>
+            <ul className="space-y-3">
+              {[
+                { name: "Documentation", href: "#" },
+                { name: "API Reference", href: "#" },
+                { name: "Trading Guides", href: "#" },
+                { name: "Market Analysis", href: "#" },
+                { name: "Community", href: "#" },
+                { name: "Support Center", href: "#" }
+              ].map((item) => (
+                <li key={item.name}>
+                  <a 
+                    className="text-sm text-slate-400 hover:text-cyan-400 transition-colors duration-200 flex items-center gap-1 group"
+                    href={item.href}
+                  >
+                    {item.name}
+                    <ExternalLink size={12} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Enhanced Legal Section */}
           <div className="col-span-2 lg:col-span-1">
-            <div className="inline-flex items-center gap-2">
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-md" aria-hidden />
-              <span className="text-lg font-extrabold tracking-tight">CryptoSense</span>
+            <div className="rounded-2xl bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-white/10 p-6 backdrop-blur-sm">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-8 w-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <div className="h-4 w-4 rounded bg-amber-400/60" />
+                </div>
+                <div className="text-sm font-semibold text-slate-200">Important Notice</div>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                All market data and tools are provided for educational and research purposes only. 
+                This is not financial advice. Cryptocurrency trading involves substantial risk.
+              </p>
+              <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                <div className="text-xs text-slate-500">© {year} CryptoSense Pro</div>
+                <div className="flex gap-4">
+                  <a href="#" className="text-xs text-slate-500 hover:text-slate-400 transition-colors">Terms</a>
+                  <a href="#" className="text-xs text-slate-500 hover:text-slate-400 transition-colors">Privacy</a>
+                </div>
+              </div>
             </div>
-            <p className="mt-3 text-sm text-slate-400">
-              Pro tools for scanning markets, learning strategies, and tracking your progress — all in one place.
-            </p>
-            <div className="mt-4 flex items-center gap-3 text-slate-300">
-              <a className="rounded-lg p-2 bg-white/5 hover:bg-white/10 border border-white/10" href="#" aria-label="Twitter">
-                <Twitter size={16} />
-              </a>
-              <a className="rounded-lg p-2 bg-white/5 hover:bg-white/10 border border-white/10" href="#" aria-label="GitHub">
-                <Github size={16} />
-              </a>
-              <a className="rounded-lg p-2 bg-white/5 hover:bg-white/10 border border-white/10" href="mailto:hello@cryptosense.app" aria-label="Email">
-                <Mail size={16} />
-              </a>
+          </div>
+        </div>
+
+        {/* Bottom Bar */}
+        <div className="border-t border-white/5">
+          <div className="mx-auto max-w-7xl px-4 py-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+              <div className="flex items-center gap-4">
+                <span>Built for crypto enthusiasts</span>
+                <div className="h-1 w-1 rounded-full bg-slate-600" />
+                <span>Real-time data</span>
+                <div className="h-1 w-1 rounded-full bg-slate-600" />
+                <span>Professional tools</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span>v2.1.0</span>
+                <div className="h-1 w-1 rounded-full bg-slate-600" />
+                <span>Updated recently</span>
+              </div>
             </div>
-          </div>
-
-          {/* App links */}
-          <div>
-            <div className="text-sm font-semibold mb-3 text-slate-300">App</div>
-            <ul className="space-y-2 text-sm text-slate-400">
-              <li><NavLink className="hover:text-slate-200" to="/">Market</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/signals">Signals</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/portfolio">Paper Trading</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/game">$1 Game</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/paper">Earn Paper</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/feed">Feed</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/dashboard">Dashboard</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/watchlist">Watchlist</NavLink></li>
-              <li><NavLink className="hover:text-slate-200" to="/alerts">Alerts</NavLink></li>
-            </ul>
-          </div>
-
-          {/* Resources */}
-          <div>
-            <div className="text-sm font-semibold mb-3 text-slate-300">Resources</div>
-            <ul className="space-y-2 text-sm text-slate-400">
-              <li><a className="hover:text-slate-200" href="#">Docs</a></li>
-              <li><a className="hover:text-slate-200" href="#">Roadmap</a></li>
-              <li><a className="hover:text-slate-200" href="#">Changelog</a></li>
-              <li><a className="hover:text-slate-200" href="#">Support</a></li>
-            </ul>
-          </div>
-
-          {/* Legal / small print */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm font-semibold">Heads up</div>
-            <p className="mt-1 text-xs text-slate-400">
-              Data is for education and research. Nothing here is financial advice.
-            </p>
-            <div className="mt-3 text-xs text-slate-500">© {year} CryptoSense</div>
           </div>
         </div>
       </div>

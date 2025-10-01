@@ -1,4 +1,3 @@
-// src/layouts/SiteLayout.jsx
 import React from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -28,8 +27,36 @@ function RouteContainer({ children }) {
 export default function SiteLayout() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
-      {/* Global mobile dock height so floating elements can sit above it */}
-      <style>{`:root { --mobile-dock-h: 64px; }`}</style>
+      {/* Global variables + helpers so floating items don't overlap the bot */}
+      <style>{`
+        :root {
+          --mobile-dock-h: 64px;              /* height of <MobileTabBar> */
+          --fab-z: 2147483647;                /* FAB sits above everything */
+          --bot-z: 2147483646;                /* chatbot sits just below the FAB */
+          --bot-size: 72px;                   /* approx. diameter of chatbot bubble */
+          --fab-size: 48px;                   /* diameter of your h-12 w-12 FAB */
+          --bot-gap: 14px;                    /* spacing between FAB & chatbot */
+        }
+
+        /* Helper class: place FAB vertically above the chatbot bubble
+           and align the CIRCLES' CENTERS horizontally */
+        .fab-above-bot {
+          /* 1rem = Tailwind right-4. We add half the size difference so centers align */
+          right: calc(1rem + max(0px, (var(--bot-size) - var(--fab-size)) / 2));
+          bottom: calc(var(--bot-size) + var(--bot-gap) + env(safe-area-inset-bottom));
+          z-index: var(--fab-z);
+        }
+
+        /* Make the create-post FAB a bit smaller on tiny screens */
+        @media (max-width: 640px) {
+          :root {
+            --bot-size: 64px;
+            --fab-size: 44px;   /* small FAB for small screens */
+            --bot-gap: 10px;
+          }
+          .create-post-fab { width: 44px; height: 44px; }
+        }
+      `}</style>
 
       <SiteNavbar />
 
@@ -44,8 +71,10 @@ export default function SiteLayout() {
       {/* Fixed Mobile bottom nav */}
       <MobileTabBar height={64} />
 
-      {/* Chat bot (positions itself using --mobile-dock-h) */}
-      <AIChatBot />
+      {/* Keep the bot in a stacking context just under the FAB */}
+      <div className="relative z-[var(--bot-z)]">
+        <AIChatBot />
+      </div>
     </div>
   );
 }

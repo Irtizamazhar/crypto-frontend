@@ -21,19 +21,20 @@ const Backtest   = lazy(() => import("./pages/Backtest"));
 const Portfolio  = lazy(() => import("./pages/Portfolio"));
 const DollarGame = lazy(() => import("./pages/DollarGame"));
 const PaperTap   = lazy(() => import("./pages/PaperTap"));
-const Feed       = lazy(() => import("./pages/Feed"));
+// 👉 make sure we import the renamed file
+const Feed       = lazy(() => import("./pages/PostPage"));
 const Dashboard  = lazy(() => import("./pages/Dashboard"));
 const Login      = lazy(() => import("./pages/Login"));
 const Register   = lazy(() => import("./pages/Register"));
 const Profile    = lazy(() => import("./pages/Profile"));
 
-// ✅ New public pages
+// Public pages
 const Terms      = lazy(() => import("./pages/Terms"));
 const Privacy    = lazy(() => import("./pages/Privacy"));
-const AuthForgot = lazy(() => import("./pages/AuthForgot")); // request magic link
-const AuthMagic  = lazy(() => import("./pages/AuthMagic"));  // consume token → sign in
+const AuthForgot = lazy(() => import("./pages/AuthForgot"));
+const AuthMagic  = lazy(() => import("./pages/AuthMagic"));
 
-// Admin (separate area)
+// Admin
 const AdminDashboard    = lazy(() => import("./pages/admin/Dashboard"));
 const AdminLogin        = lazy(() => import("./pages/admin/Login"));
 const AdminLotteryPanel = lazy(() => import("./pages/admin/AdminLotteryPanel"));
@@ -133,25 +134,24 @@ export default function App() {
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              {/* ✅ new public routes */}
               <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/auth/forgot" element={<AuthForgot />} />
               <Route path="/auth/magic" element={<AuthMagic />} />
 
               {/* protected */}
-              <Route path="/signals"   element={<ProtectedRoute><Signals /></ProtectedRoute>} />
-              <Route path="/coin/:id"  element={<ProtectedRoute><Coin /></ProtectedRoute>} />
-              <Route path="/trade/:id" element={<ProtectedRoute><Trade /></ProtectedRoute>} />
+              <Route path="/signals"    element={<ProtectedRoute><Signals /></ProtectedRoute>} />
+              <Route path="/coin/:id"   element={<ProtectedRoute><Coin /></ProtectedRoute>} />
+              <Route path="/trade/:id"  element={<ProtectedRoute><Trade /></ProtectedRoute>} />
               <Route path="/backtest/:id" element={<ProtectedRoute><Backtest /></ProtectedRoute>} />
-              <Route path="/game"      element={<ProtectedRoute><DollarGame /></ProtectedRoute>} />
-              <Route path="/paper"     element={<ProtectedRoute><PaperTap /></ProtectedRoute>} />
-              <Route path="/feed"      element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-              <Route path="/watchlist" element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
-              <Route path="/alerts"    element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
-              <Route path="/portfolio" element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/game"       element={<ProtectedRoute><DollarGame /></ProtectedRoute>} />
+              <Route path="/paper"      element={<ProtectedRoute><PaperTap /></ProtectedRoute>} />
+              <Route path="/feed"       element={<ProtectedRoute><Feed /></ProtectedRoute>} />
+              <Route path="/watchlist"  element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
+              <Route path="/alerts"     element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
+              <Route path="/portfolio"  element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
+              <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/profile"    element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             </Route>
 
             {/* ---------- ADMIN ---------- */}

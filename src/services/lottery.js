@@ -2,22 +2,21 @@
 import { api } from "./_core";
 
 function qs(params = {}) {
-  const entries = Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== "");
-  return entries.length ? `?${new URLSearchParams(Object.fromEntries(entries)).toString()}` : "";
+  const pairs = Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== "");
+  return pairs.length ? `?${new URLSearchParams(Object.fromEntries(pairs)).toString()}` : "";
 }
 
-// User
-export async function fetchCurrentRound(token) {
-  return api(`/api/lottery/current`, { token });
+export async function fetchCurrentRound(token, tier = 1) {
+  return api(`/api/lottery/current${qs({ tier })}`, { token });
 }
-export async function joinLottery(token) {
-  return api(`/api/lottery/join`, { token, method: "POST" });
+export async function joinLottery(token, tier = 1) {
+  return api(`/api/lottery/join${qs({ tier })}`, { token, method: "POST" });
 }
 export async function fetchRounds(token, opts = {}) {
   return api(`/api/lottery/rounds${qs(opts)}`, { token });
 }
-export async function fetchPastRounds(token, limit = 50) {
-  return fetchRounds(token, { resolved: 1, limit });
+export async function fetchPastRounds(token, limit = 50, tier = 1) {
+  return fetchRounds(token, { resolved: 1, limit, tier });
 }
 export async function fetchRoundParticipants(token, roundId) {
   return api(`/api/lottery/rounds/${encodeURIComponent(roundId)}/participants`, { token });

@@ -1,98 +1,120 @@
-// Uses the same base + helper from src/services/api.js
-import { APP_API, appReq } from "./api";
+// src/services/admin.js
+import { APP_API, getToken } from "./api";
 
-/**
- * Admin API with graceful fallback:
- * - login() tries /admin/auth/login; if 404, falls back to /auth/login,
- *   then enforces role === 'admin'.
- */
+/** Build an absolute API URL safely (handles missing leading slash) */
+function urlFor(path) {
+  return `${APP_API}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+/** Authenticated fetch that throws on non-2xx (with nicer admin messages) */
+async function authed(path, options = {}) {
+  const token = typeof getToken === "function" ? getToken() : null;
+  if (!token) {
+    const err = new Error("Unauthorized");
+    err.status = 401;
+    throw err;
+  }
+
+  const headers = new Headers(options.headers || {});
+  headers.set("Authorization", `Bearer ${token}`);
+
+  // Only set JSON content-type if we’re sending a non-GET with a plain body
+  const isGet = !options.method || options.method.toUpperCase() === "GET";
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!isGet && !headers.has("Content-Type") && !isFormData) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const res = await fetch(urlFor(path), { ...options, headers });
+
+  // 204 No Content safety
+  if (res.status === 204) return null;
+
+  // Try to parse JSON if available, otherwise fall back to text
+  let data = null;
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    try { data = await res.json(); } catch { data = null; }
+  } else {
+    try { data = await res.text(); } catch { data = null; }
+  }
+
+  if (!res.ok) {
+    const message =
+      res.status === 401 ? "Unauthorized" :
+      res.status === 403 ? "Forbidden — admin only" :
+      (data && data.message) || `HTTP ${res.status}`;
+    const err = new Error(message);
+    err.status = res.status;
+    throw err;
+  }
+
+  // Normalize to object for callers expecting JSON
+  return data ?? {};
+}
+
 export const AdminAPI = {
-  async login({ email, password }) {
-    try {
-      // First try a dedicated admin login route (if your backend has it)
-      return await appReq("/admin/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
-    } catch (e) {
-      // Fallback to normal auth when admin route is missing
-      if (/404|Not Found|Cannot POST/i.test(e.message || "")) {
-        const res = await appReq("/auth/login", {
-          method: "POST",
-          body: JSON.stringify({ email, password }),
-        });
-        const role = String(res?.user?.role || "").toLowerCase();
-        if (role !== "admin") {
-          const err = new Error("This account is not an admin.");
-          err.code = "NOT_ADMIN";
-          throw err;
-        }
-        return res;
-      }
-      throw e;
-    }
+  me: () => authed("/admin/auth/me"),
+
+  // Overview + Accounts
+  getOverview: () => authed("/admin/overview"),
+  getAdminAccounts: () => authed("/admin/accounts"),
+  refreshHotWallet: () => authed("/admin/accounts/refresh-wallet"),
+  tronStatus: () => authed("/admin/tron-status"),
+
+  // Users
+  getUsers: ({ page = 1, q = "" } = {}) =>
+    authed(`/admin/users?page=${page}&q=${encodeURIComponent(q)}`),
+  setRole: (id, role) =>
+    authed(`/admin/users/${id}/role`, { method: "PUT", body: JSON.stringify({ role }) }),
+  setStatus: (id, status) =>
+    authed(`/admin/users/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
+
+  // Payments
+  getPayments: ({ page = 1, q = "" } = {}) =>
+    authed(`/admin/payments?page=${page}&q=${encodeURIComponent(q)}`),
+
+  // Withdrawals
+  getWithdrawals: ({ page = 1, q = "", status = "all" } = {}) => {
+    const qs = new URLSearchParams({ page, q, status });
+    return authed(`/admin/withdrawals?${qs.toString()}`);
+  },
+  approveWithdrawal: (id) =>
+    authed(`/admin/withdrawals/${id}/approve`, { method: "POST" }),
+  rejectWithdrawal: (id, reason) =>
+    authed(`/admin/withdrawals/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+
+  // Deposits
+  getDeposits: ({ page = 1, q = "", status = "all" } = {}) => {
+    const qs = new URLSearchParams({ page, q, status });
+    return authed(`/admin/deposits?${qs.toString()}`);
   },
 
-  // If your backend has /admin/auth/me it's used; else falls back to /auth/me and enforces admin
-  async me() {
-    try {
-      return await appReq("/admin/auth/me");
-    } catch (e) {
-      if (/404|Not Found/i.test(e.message || "")) {
-        const j = await appReq("/auth/me");
-        const role = String(j?.user?.role || "").toLowerCase();
-        if (role !== "admin") {
-          const err = new Error("Not an admin.");
-          err.code = "NOT_ADMIN";
-          throw err;
-        }
-        return j;
-      }
-      throw e;
-    }
-  },
+  // Earn Paper settings
+  getPaperSettings: () => authed("/admin/earn-paper"),
+  savePaperSettings: (payload) =>
+    authed("/admin/earn-paper", { method: "PUT", body: JSON.stringify(payload) }),
+};
 
-  // overview
-  getOverview() {
-    return appReq("/admin/overview");
-  },
+// ✅ Uses the correct `/api/lottery/*` base to match server/index.js
+export const LotteryAPI = {
+  current: (tier = 1) => authed(`/api/lottery/current?tier=${tier}`),
 
-  // users
-  getUsers({ page = 1, q = "" } = {}) {
-    const url = new URL(`${APP_API}/admin/users`);
-    url.searchParams.set("page", String(page));
-    if (q) url.searchParams.set("q", q);
-    return fetch(url.toString(), { credentials: "include" }).then((r) => r.json());
-  },
-  setRole(userId, role) {
-    return appReq(`/admin/users/${userId}/role`, {
-      method: "PUT",
-      body: JSON.stringify({ role }),
-    });
-  },
-  setStatus(userId, status) {
-    return appReq(`/admin/users/${userId}/status`, {
-      method: "PUT",
-      body: JSON.stringify({ status }), // "active" | "banned"
-    });
-  },
+  // List rounds (same endpoint for user/admin; auth middleware restricts)
+  rounds: ({ tier = 1, resolved = 0 } = {}) =>
+    authed(`/api/lottery/rounds?tier=${tier}&resolved=${resolved}`),
 
-  // payments
-  getPayments({ page = 1, q = "" } = {}) {
-    const url = new URL(`${APP_API}/admin/payments`);
-    url.searchParams.set("page", String(page));
-    if (q) url.searchParams.set("q", q);
-    return fetch(url.toString(), { credentials: "include" }).then((r) => r.json());
-  },
+  // Participants for a given round
+  participants: (roundId) =>
+    authed(`/api/lottery/rounds/${encodeURIComponent(roundId)}/participants`),
 
-  // earn-paper
-  getPaperSettings() {
-    return appReq("/admin/earn-paper");
-  },
-  savePaperSettings(payload) {
-    return appReq("/admin/earn-paper", {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-  },
+  // Resolve (admin-protected by middleware on the server)
+  resolveRound: (roundId, { winnerUserId, payout }) =>
+    authed(`/api/lottery/rounds/${encodeURIComponent(roundId)}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ winnerUserId, payout }),
+    }),
 };
