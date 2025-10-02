@@ -1,16 +1,26 @@
+// src/services/api.js
+
+// --- API base ---------------------------------------------------------------
 export const APP_API =
   (process.env.REACT_APP_API_URL?.replace(/\/$/, "")) || "http://localhost:4000";
 
-// --- auth token helpers ---
+function buildUrl(path) {
+  return `${APP_API}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+// --- auth token helpers -----------------------------------------------------
 export const TOKEN_KEY = "token";
+
 export function getToken() {
-  try { 
+  try {
     const token = localStorage.getItem(TOKEN_KEY);
+    // In case someone saved with quotes, strip them:
     return token ? token.replace(/^"+|"+$/g, "") : "";
-  } catch { 
-    return ""; 
+  } catch {
+    return "";
   }
 }
+
 export function setToken(token) {
   try {
     if (token) {
@@ -28,93 +38,112 @@ export function clearToken() {
   } catch {}
 }
 
-// Enhanced appReq with better error handling
-export async function appReq(path, options = {}) {
-  const url = `${APP_API}${path.startsWith("/") ? path : `/${path}`}`;
-  const token = getToken();
-  
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
-
-  // Only add Authorization header if token exists
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+// --- response parsing helpers ----------------------------------------------
+async function parseMaybeJson(res) {
+  const contentType = res.headers.get("content-type") || "";
+  // 204 / No Content or empty body – return {}
+  if (res.status === 204) return {};
+  if (!contentType) {
+    // Some servers may not set content-type for empty responses
+    try {
+      const txt = await res.text();
+      if (!txt) return {};
+      // If body isn't empty but no content-type, try JSON first
+      try {
+        return JSON.parse(txt);
+      } catch {
+        return { message: txt };
+      }
+    } catch {
+      return {};
+    }
   }
 
-  try {
-    const res = await fetch(url, { 
-      ...options,
-      headers,
-      credentials: "include"
-    });
-    
-    // Handle non-JSON responses
-    const contentType = res.headers.get('content-type');
-    let data;
-    
-    if (contentType && contentType.includes('application/json')) {
-      data = await res.json();
-    } else {
-      data = await res.text();
-      throw new Error(`Unexpected response type: ${contentType}`);
+  if (contentType.includes("application/json")) {
+    try {
+      return await res.json();
+    } catch {
+      // bad json or empty body
+      return {};
     }
+  }
 
-    // Auto-clear bad/expired tokens
+  // Non-JSON — read small preview and raise a helpful error upstream
+  const text = await res.text();
+  const preview = (text || "").slice(0, 200);
+  const err = new Error(
+    `Unexpected response type: ${contentType}. Preview: ${preview}`
+  );
+  err.__rawText = preview;
+  err.__contentType = contentType;
+  err.__status = res.status;
+  throw err;
+}
+
+function withDefaultHeaders(options = {}, token) {
+  const baseHeaders = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  const headers = { ...baseHeaders, ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return { ...options, headers, credentials: "include" };
+}
+
+// --- core request helpers ---------------------------------------------------
+export async function appReq(path, options = {}) {
+  const url = buildUrl(path);
+  const token = getToken();
+
+  try {
+    const res = await fetch(url, withDefaultHeaders(options, token));
+    const data = await parseMaybeJson(res);
+
+    // auto-clear bad/expired tokens
     if (res.status === 401 || res.status === 403) {
       clearToken();
-      throw new Error(data.message || "Authentication failed");
+      const msg = data?.message || "Authentication failed";
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
 
     if (!res.ok) {
-      throw new Error(data.message || `Request failed with status ${res.status}`);
+      const msg = data?.message || `Request failed with status ${res.status}`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
+
     return data;
-    
   } catch (error) {
-    console.error('API error', path, error);
+    console.error("API error:", url, error);
     throw error;
   }
 }
 
-// Separate function for public requests (no token)
 export async function publicReq(path, options = {}) {
-  const url = `${APP_API}${path.startsWith("/") ? path : `/${path}`}`;
-
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
+  const url = buildUrl(path);
 
   try {
-    const res = await fetch(url, { 
-      ...options,
-      headers,
-      credentials: "include"
-    });
-
-    const contentType = res.headers.get('content-type');
-    let data;
-    
-    if (contentType && contentType.includes('application/json')) {
-      data = await res.json();
-    } else {
-      data = await res.text();
-    }
+    const res = await fetch(url, withDefaultHeaders(options));
+    const data = await parseMaybeJson(res);
 
     if (!res.ok) {
-      throw new Error(data.message || `Request failed with status ${res.status}`);
+      const msg = data?.message || `Request failed with status ${res.status}`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
+
     return data;
-    
   } catch (error) {
-    console.error('Public API error', path, error);
+    console.error("Public API error:", url, error);
     throw error;
   }
 }
 
-// AuthAPI - uses appReq (with token)
+// --- Auth API ---------------------------------------------------------------
 export const AuthAPI = {
   async register({ name, email, password }) {
     const data = await appReq("/auth/register", {
@@ -160,7 +189,9 @@ export const AuthAPI = {
   },
 
   async magicLogin(token) {
-    const data = await publicReq(`/auth/magic-login?token=${encodeURIComponent(token)}`);
+    const data = await publicReq(
+      `/auth/magic-login?token=${encodeURIComponent(token)}`
+    );
     if (data?.token) setToken(data.token);
     return data;
   },
@@ -170,29 +201,51 @@ export const AuthAPI = {
   appleUrl: `${APP_API}/auth/apple`,
 };
 
-// WalletAPI - uses appReq (with token)
+// --- Wallet API -------------------------------------------------------------
 export const WalletAPI = {
   async getTrc20Wallet() {
     return appReq("/wallet/trc20");
   },
-  
+
   async getBalance() {
     return appReq("/wallet/balance");
   },
-  
+
   async listDeposits() {
+    // if your backend route is /wallet/deposits adjust accordingly
     return appReq("/deposits");
   },
-  
+
   async purchase({ amount_usdt, item_code }) {
     return appReq("/wallet/purchase", {
       method: "POST",
       body: JSON.stringify({ amount_usdt, item_code }),
     });
-  }
+  },
 };
 
-// ===== Binance via Proxy + utilities =====
+// --- Alerts API (quota helpers here to avoid path mismatches) ---------------
+export const AlertsAPI = {
+  // Backend route provided in server/routes/alerts.js
+  async limits() {
+    // returns { plan, used, remaining } mapped on server
+    return appReq("/api/alerts/limits");
+  },
+
+  async consume() {
+    // increments the free quota counter on the server
+    return appReq("/api/alerts/quota/consume", { method: "POST" });
+  },
+
+  // If you prefer keeping the CRUD here too, uncomment and use:
+  // async list() { return appReq("/api/alerts"); },
+  // async create(body) { return appReq("/api/alerts", { method: "POST", body: JSON.stringify(body) }); },
+  // async update(id, patch) { return appReq(`/api/alerts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }); },
+  // async remove(id) { return appReq(`/api/alerts/${encodeURIComponent(id)}`, { method: "DELETE" }); },
+  // async clear() { return appReq(`/api/alerts/clear`, { method: "POST" }); },
+};
+
+// --- Binance proxy + utilities ---------------------------------------------
 const PROXY = `${APP_API}/proxy/binance`;
 const WS = "wss://stream.binance.com:9443/ws";
 const SAFE_FIATS = ["usd", "eur"];
@@ -340,14 +393,13 @@ export async function fetchKlines(symbol = "BTCUSDT", interval = "1h", limit = 5
   return rows.map((k) => Number(k[4]));
 }
 
-/** ✅ NEW: OHLC helper that your hook expects */
+// OHLC helper
 export async function fetchKlinesOHLC(symbol = "BTCUSDT", interval = "1m", limit = 300, { signal } = {}) {
   const url = new URL(`${PROXY}/klines`);
   url.searchParams.set("symbol", symbol);
   url.searchParams.set("interval", interval);
   url.searchParams.set("limit", String(limit));
   const rows = await getJson(url.toString(), { signal });
-  // Binance format -> normalize to {openTime, open, high, low, close, volume, closeTime}
   return rows.map(r => ({
     openTime: r[0],
     open: Number(r[1]),
@@ -372,8 +424,7 @@ export async function fetchCoinHistory7d(id, { signal } = {}) {
 export async function fetchGlobalFromMarket({ signal } = {}) {
   const tickers = await getJson(`${PROXY}/ticker24h`, { signal });
   const usdt = tickers.filter((t) => /USDT$/.test(t.symbol));
-  let totalQuote = 0,
-    btcQuote = 0;
+  let totalQuote = 0, btcQuote = 0;
   for (const t of usdt) {
     const qv = Number(t.quoteVolume) || 0;
     totalQuote += qv;
@@ -383,7 +434,7 @@ export async function fetchGlobalFromMarket({ signal } = {}) {
   return { volumeUsd24Hr: totalQuote, bitcoinDominance };
 }
 
-/** ✅ NEW: open a true kline WebSocket stream; returns an unsubscribe fn */
+// WebSocket streams
 export function openKlineStream(symbol, interval, onKline) {
   let ws;
   const url = `${WS}/${String(symbol).toLowerCase()}@kline_${interval}`;
@@ -393,7 +444,6 @@ export function openKlineStream(symbol, interval, onKline) {
       const msg = JSON.parse(ev.data);
       const k = msg?.k;
       if (!k) return;
-      // map to the shape your hook expects
       onKline?.({
         openTime: k.t,
         open: Number(k.o),
@@ -406,25 +456,17 @@ export function openKlineStream(symbol, interval, onKline) {
       });
     } catch {}
   };
-  ws.onerror = () => {
-    try { ws.close(); } catch {}
-  };
-  return () => {
-    try { ws && ws.close(1000, "client-close"); } catch {}
-  };
+  ws.onerror = () => { try { ws.close(); } catch {} };
+  return () => { try { ws && ws.close(1000, "client-close"); } catch {} };
 }
 
 export function openMiniTickerStream(onUpdate) {
-  let ws,
-    alive = true,
-    attempts = 0;
+  let ws, alive = true, attempts = 0;
   const connect = () => {
     if (!alive) return;
     attempts++;
     ws = new WebSocket(`${WS}/!miniTicker@arr`);
-    ws.onopen = () => {
-      attempts = 0;
-    };
+    ws.onopen = () => { attempts = 0; };
     ws.onmessage = (ev) => {
       try {
         const arr = JSON.parse(ev.data);
@@ -453,22 +495,13 @@ export function openMiniTickerStream(onUpdate) {
       const delay = Math.min(15000, 1000 * Math.pow(2, attempts));
       setTimeout(connect, delay);
     };
-    ws.onerror = () => {
-      try {
-        ws.close();
-      } catch {}
-    };
+    ws.onerror = () => { try { ws.close(); } catch {} };
   };
   connect();
-  return () => {
-    alive = false;
-    try {
-      ws && ws.close();
-    } catch {}
-  };
+  return () => { alive = false; try { ws && ws.close(); } catch {} };
 }
 
-// Market data and news functions
+// Market data + news (public)
 export async function fetchMarketData(symbol) {
   try {
     const id = String(symbol || "").toLowerCase();
@@ -477,7 +510,6 @@ export async function fetchMarketData(symbol) {
     );
     if (!res.ok) throw new Error(`fetchMarketData failed (${res.status})`);
     const data = await res.json();
-
     return {
       market_cap: data?.market_data?.market_cap?.usd ?? null,
       total_volume: data?.market_data?.total_volume?.usd ?? null,
@@ -493,10 +525,11 @@ export async function fetchMarketData(symbol) {
 export async function fetchNews(symbol, name) {
   try {
     const q = encodeURIComponent(name || symbol || "crypto");
-    const res = await fetch(`https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=${q}`);
+    const res = await fetch(
+      `https://min-api.cryptocompare.com/data/v2/news/?lang=EN&categories=${q}`
+    );
     if (!res.ok) throw new Error(`fetchNews failed (${res.status})`);
     const payload = await res.json();
-
     const items = Array.isArray(payload?.Data) ? payload.Data : [];
     return items.map((n) => ({
       title: n.title,

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAlerts } from "../context/AlertsContext";
+import { usePaywall } from "../context/PaywallContext";
 import { fetchMarket } from "../services/api";
-import AlertModal from "../components/AlertModal";
 import SmartImg from "../components/SmartImg";
 import {
   Bell, BellOff, Plus, Trash2, ToggleRight, ToggleLeft, Search,
@@ -512,8 +512,9 @@ function EnhancedAlertModal({ open, onClose, coin }) {
 /* ---------------------------- Main Alerts Page ---------------------------- */
 export default function AlertsPage() {
   const {
-    alerts, updateAlert, removeAlert, clearAll, muted, toggleMute, ensurePermission,
+    alerts, updateAlert, removeAlert, clearAll, muted, toggleMute, ensurePermission, /* NEW: */ limits,
   } = useAlerts();
+  const { openPaywall } = usePaywall();
 
   const [coins, setCoins] = useState([]);
   const [loadingCoins, setLoadingCoins] = useState(true);
@@ -685,27 +686,40 @@ export default function AlertsPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${
-                muted 
-                  ? "bg-slate-500/20 border-slate-500/30 text-slate-400" 
-                  : "bg-amber-500/20 border-amber-500/30 text-amber-400"
-              }`}
-              onClick={toggleMute}
-              title={muted ? "Unmute notifications" : "Mute notifications"}
-            >
-              {muted ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-              {muted ? "Muted" : "Mute"}
-            </button>
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-300">
+                Plan: <b>{(limits?.plan || "free").toUpperCase()}</b> • Alerts: {limits?.used ?? 0}/{limits?.max ?? 2}
+              </span>
+              {limits?.plan !== "pro" && limits?.used >= (limits?.max ?? 2) && (
+                <button onClick={openPaywall} className="px-3 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+                  Unlock Pro
+                </button>
+              )}
+            </div>
 
-            <button 
-              className="flex items-center gap-2 px-4 py-2 bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl hover:bg-rose-500/30 transition-all"
-              onClick={() => setShowConfirmClear(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-              Clear All
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${
+                  muted 
+                    ? "bg-slate-500/20 border-slate-500/30 text-slate-400" 
+                    : "bg-amber-500/20 border-amber-500/30 text-amber-400"
+                }`}
+                onClick={toggleMute}
+                title={muted ? "Unmute notifications" : "Mute notifications"}
+              >
+                {muted ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                {muted ? "Muted" : "Mute"}
+              </button>
+
+              <button 
+                className="flex items-center gap-2 px-4 py-2 bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl hover:bg-rose-500/30 transition-all"
+                onClick={() => setShowConfirmClear(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All
+              </button>
+            </div>
           </div>
         </div>
 
@@ -803,6 +817,11 @@ export default function AlertsPage() {
                   : "Try adjusting your filters or search to see more alerts."
                 }
               </p>
+              {limits?.plan !== "pro" && (
+                <button onClick={openPaywall} className="mt-2 px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+                  Unlock Pro
+                </button>
+              )}
             </div>
           </div>
         ) : (

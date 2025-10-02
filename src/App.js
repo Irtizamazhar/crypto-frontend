@@ -6,6 +6,7 @@ import { LoadingProvider } from "./context/LoadingContext";
 import { AlertsProvider } from "./context/AlertsContext";
 import { ToastProvider, useToast } from "./components/ToastHub";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { PaywallProvider } from "./context/PaywallContext"; // ✅ ADD
 
 // Layouts
 import SiteLayout from "./layouts/SiteLayout";
@@ -21,12 +22,15 @@ const Backtest   = lazy(() => import("./pages/Backtest"));
 const Portfolio  = lazy(() => import("./pages/Portfolio"));
 const DollarGame = lazy(() => import("./pages/DollarGame"));
 const PaperTap   = lazy(() => import("./pages/PaperTap"));
-// 👉 make sure we import the renamed file
+// 👉 renamed file per your setup
 const Feed       = lazy(() => import("./pages/PostPage"));
 const Dashboard  = lazy(() => import("./pages/Dashboard"));
 const Login      = lazy(() => import("./pages/Login"));
 const Register   = lazy(() => import("./pages/Register"));
 const Profile    = lazy(() => import("./pages/Profile"));
+// optional new pages you added earlier:
+const Plans      = lazy(() => import("./pages/Plans"));
+const Payments   = lazy(() => import("./pages/Payments"));
 
 // Public pages
 const Terms      = lazy(() => import("./pages/Terms"));
@@ -102,7 +106,14 @@ export default function App() {
   const Providers = ({ children }) => {
     const ToastHook = ({ children }) => {
       const { push } = useToast();
-      return <AlertsProvider onToast={(t) => push(t)}>{children}</AlertsProvider>;
+      // ✅ Wrap AlertsProvider with PaywallProvider so usePaywall() is available
+      return (
+        <PaywallProvider>
+          <AlertsProvider onToast={(t) => push(t)}>
+            {children}
+          </AlertsProvider>
+        </PaywallProvider>
+      );
     };
     return (
       <AuthProvider>
@@ -152,6 +163,10 @@ export default function App() {
               <Route path="/portfolio"  element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
               <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/profile"    element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+
+              {/* If you added these earlier */}
+              <Route path="/plans"     element={<ProtectedRoute><Plans /></ProtectedRoute>} />
+              <Route path="/payments"  element={<ProtectedRoute><Payments /></ProtectedRoute>} />
             </Route>
 
             {/* ---------- ADMIN ---------- */}

@@ -1,10 +1,19 @@
 // src/components/AIChatBot.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, X, Send, User, Loader2 } from "lucide-react";
+import { Bot, X, Send, User, Loader2, ShieldCheck, Activity } from "lucide-react";
 import { fetchCoin, fetchMarketData, fetchNews, fetchKlines, fetchMarket } from "../services/api";
+import { useAlerts } from "../context/AlertsContext";
+import { parseAlertIntent, extractSymbol } from "../lib/alertNLP";
 
-/* ---------- Indicators (unchanged) ---------- */
+/* ---------- Small utils ---------- */
+const utcNow = () =>
+  new Date().toLocaleString("en-GB", { hour12: false, timeZone: "UTC" }) + " UTC";
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const pctNum = (n, d = 2) => `${(Number(n) || 0).toFixed(d)}%`;
+
+/* ---------- Indicators ---------- */
 const calculateRSI = (prices, period = 14) => {
   if (prices.length < period + 1) return 50;
   let gains = 0, losses = 0;
@@ -18,6 +27,7 @@ const calculateRSI = (prices, period = 14) => {
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
 };
+
 const calculateMACD = (prices) => {
   if (prices.length < 26) return { macd: 0, signal: 0, histogram: 0 };
   const ema12 = prices.slice(-12).reduce((a, b) => a + b, 0) / 12;
@@ -27,6 +37,48 @@ const calculateMACD = (prices) => {
   return { macd, signal, histogram: macd - signal };
 };
 
+/* ---------- Confidence & plan helpers ---------- */
+function computeConfidence(analysis) {
+  if (!analysis) return 50;
+  let score = 30;
+  if (analysis.trend.includes("bullish")) score += 15;
+  if (analysis.trend === "strong-bullish") score += 10;
+  if (analysis.trend.includes("bearish")) score += 5;
+  if (analysis.rsi > 55 && analysis.rsi < 70) score += 8;
+  if (analysis.macd.histogram > 0) score += 7;
+  if (analysis.volatility < 6) score += 5;
+  return clamp(score, 30, 85);
+}
+
+function buildPlan(symbol, a) {
+  if (!a) return null;
+  const bias =
+    a.trend === "strong-bullish" ? "strong-bullish" :
+    a.trend === "weak-bullish" ? "weak-bullish" :
+    a.trend === "weak-bearish" ? "weak-bearish" : "strong-bearish";
+
+  const entry = a.currentPrice;
+  const invalid =
+    bias.includes("bullish")
+      ? Math.min(a.sma20 || entry * 0.992, entry * 0.985)
+      : Math.max(a.sma20 || entry * 1.008, entry * 1.015);
+
+  const step = Math.max(0.004, Math.min(0.02, (a.volatility || 3) / 300));
+  const t1 = bias.includes("bullish") ? entry * (1 + step) : entry * (1 - step);
+  const t2 = bias.includes("bullish") ? entry * (1 + step * 2.2) : entry * (1 - step * 2.2);
+
+  return {
+    symbol,
+    timeframe: "1h",
+    bias,
+    entry: Number(entry),
+    invalid: Number(invalid),
+    targets: [Number(t1), Number(t2)],
+    confidence: computeConfidence(a),
+    volatility: a.volatility,
+  };
+}
+
 /* ---------- Component ---------- */
 export default function AIChatBot() {
   const [open, setOpen] = useState(false);
@@ -34,9 +86,10 @@ export default function AIChatBot() {
     {
       from: "bot",
       text:
-        "Hello! I'm your advanced crypto trading assistant with predictive analytics. I can help with real-time market data, AI-powered predictions, sentiment analysis, and trading strategies. How can I assist you today? 🚀",
+        "Hello! I'm your crypto assistant with live market data and structured trade plans (bias, invalidation, targets). Ask me about any coin or say “trending”. 🚀",
       timestamp: new Date(),
       type: "greeting",
+      meta: { source: "Welcome", at: utcNow() },
     },
   ]);
   const [input, setInput] = useState("");
@@ -45,24 +98,27 @@ export default function AIChatBot() {
   const [userName, setUserName] = useState(localStorage.getItem("chatbot_user_name") || "");
   const messagesEndRef = useRef(null);
 
+  const { addAlert, limits } = useAlerts();
+
   /* ---------- Responsive behavior ---------- */
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" ? window.matchMedia("(max-width: 767px)").matches : false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 767px)").matches : false
+  );
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 767px)");
     const onChange = (e) => setIsMobile(e.matches);
     if (mql.addEventListener) mql.addEventListener("change", onChange);
-    else mql.addListener(onChange); // Safari fallback
+    else mql.addListener(onChange);
     return () => {
       if (mql.removeEventListener) mql.removeEventListener("change", onChange);
       else mql.removeListener(onChange);
     };
   }, []);
 
-  // Lock body scroll when panel is open (prevents background scroll on mobile)
+  // Lock body scroll when panel is open
   useEffect(() => {
     const prev = document.body.style.overflow;
-    if (open) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = prev || "";
+    document.body.style.overflow = open ? "hidden" : prev || "";
     return () => { document.body.style.overflow = prev || ""; };
   }, [open]);
 
@@ -70,35 +126,36 @@ export default function AIChatBot() {
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (userName) localStorage.setItem("chatbot_user_name", userName); }, [userName]);
 
-  const simulateTyping = async (callback, duration = 1000) => {
+  const simulateTyping = async (callback, duration = 800) => {
     setTyping(true);
     await new Promise((r) => setTimeout(r, duration + Math.random() * 500));
     setTyping(false);
     callback();
   };
 
-  /* ---------- Data helpers (unchanged) ---------- */
+  /* ---------- Data helpers ---------- */
   async function getTrendingCoins(limit = 5) {
     try {
       const marketData = await fetchMarket({ per_page: 100 });
       const scoredCoins = marketData.map((coin) => {
-        const volumeScore = Math.log10(coin.volumeUsd24Hr + 1) * 0.4;
-        const priceChangeScore = Math.abs(coin.changePercent24Hr) * 0.3;
-        const momentumScore = coin.changePercent24Hr > 0 ? 0.3 : 0.1;
+        const volumeScore = Math.log10((coin.volumeUsd24Hr || coin.volumeQuote24h || 0) + 1) * 0.4;
+        const priceChangeScore = Math.abs(coin.changePercent24Hr || 0) * 0.3;
+        const momentumScore = (coin.changePercent24Hr || 0) > 0 ? 0.3 : 0.1;
         return { ...coin, score: volumeScore + priceChangeScore + momentumScore };
       });
       return scoredCoins
-        .filter((c) => c.changePercent24Hr > 1)
+        .filter((c) => (c.changePercent24Hr || 0) > 1)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
     } catch {
       return [];
     }
   }
+
   async function analyzeMarketCondition(symbol) {
     try {
       const klines = await fetchKlines(`${symbol}USDT`, "1h", 100);
-      if (klines.length < 50) return null;
+      if (!Array.isArray(klines) || klines.length < 50) return null;
       const currentPrice = klines[klines.length - 1];
       const prices24h = klines.slice(-24);
       const high24h = Math.max(...prices24h);
@@ -107,7 +164,7 @@ export default function AIChatBot() {
       const sma50 = klines.slice(-50).reduce((a, b) => a + b, 0) / 50;
       const rsi = calculateRSI(klines);
       const macd = calculateMACD(klines);
-      const volatility = ((high24h - low24h) / low24h) * 100;
+      const volatility = ((high24h - low24h) / Math.max(1e-9, low24h)) * 100;
 
       let trendStrength = 0;
       if (currentPrice > sma20) trendStrength += 1;
@@ -125,248 +182,231 @@ export default function AIChatBot() {
       return null;
     }
   }
-  function generatePrediction(analysis, symbol) {
+
+  function formatPrediction(analysis, symbol) {
     if (!analysis) return "Not enough data for prediction.";
-    const { trend, trendStrength, currentPrice, volatility, rsi } = analysis;
-    const confidence = Math.min(85, trendStrength * 20 + 30);
+    const { trend, currentPrice, volatility, rsi } = analysis;
+    const confidence = computeConfidence(analysis);
     let predictionText = "", timeFrame = "", targetPrice = currentPrice;
 
     switch (trend) {
       case "strong-bullish":
-        targetPrice = currentPrice * (1 + volatility * 0.002);
-        timeFrame = "next 24-48 hours";
-        predictionText = `📈 *BULLISH PREDICTION*\nExpect upward movement to $${targetPrice.toFixed(2)}`;
+        targetPrice = currentPrice * (1 + (volatility || 5) * 0.002);
+        timeFrame = "next 24–48 hours";
+        predictionText = `📈 *BULLISH PREDICTION*\nExpect a push toward $${targetPrice.toFixed(2)}`;
         break;
       case "weak-bullish":
-        targetPrice = currentPrice * (1 + volatility * 0.001);
-        timeFrame = "next 12-24 hours";
+        targetPrice = currentPrice * (1 + (volatility || 5) * 0.001);
+        timeFrame = "next 12–24 hours";
         predictionText = `↗️ *MILD BULLISH*\nPotential rise to $${targetPrice.toFixed(2)}`;
         break;
       case "weak-bearish":
-        targetPrice = currentPrice * (1 - volatility * 0.001);
-        timeFrame = "next 12-24 hours";
+        targetPrice = currentPrice * (1 - (volatility || 5) * 0.001);
+        timeFrame = "next 12–24 hours";
         predictionText = `↘️ *MILD BEARISH*\nPossible dip to $${targetPrice.toFixed(2)}`;
         break;
       case "strong-bearish":
-        targetPrice = currentPrice * (1 - volatility * 0.002);
-        timeFrame = "next 24-48 hours";
-        predictionText = `📉 *BEARISH PREDICTION*\nExpect decline to $${targetPrice.toFixed(2)}`;
+        targetPrice = currentPrice * (1 - (volatility || 5) * 0.002);
+        timeFrame = "next 24–48 hours";
+        predictionText = `📉 *BEARISH PREDICTION*\nExpect a fade toward $${targetPrice.toFixed(2)}`;
         break;
       default:
         break;
     }
 
-    return `${predictionText} within ${timeFrame}.\n\nConfidence: ${confidence.toFixed(0)}% | RSI: ${rsi.toFixed(0)}\n\n⚠️ *Remember:* Predictions are probabilistic, not guarantees. Always use stop-losses.`;
+    return `${predictionText} within ${timeFrame}.\n\nConfidence: ${confidence}% | RSI: ${analysis.rsi.toFixed(0)}\n\n⚠️ Educational outlook, not financial advice.`;
   }
-  function generateRecommendation(analysis, symbol) {
+
+  function formatRecommendation(analysis, symbol) {
     if (!analysis) return "Not enough data for a reliable recommendation.";
     const { trend, volatility, currentPrice, sma20, rsi, macd } = analysis;
-    let recommendation = `🎯 *${symbol} COMPREHENSIVE ANALYSIS:*\n\n`;
-    recommendation += `• Current Price: $${currentPrice.toFixed(2)}\n`;
+    let recommendation = `🎯 *${symbol} ANALYSIS (1h):*\n\n`;
+    recommendation += `• Price: $${currentPrice.toFixed(2)}\n`;
     recommendation += `• Trend: ${trend.replace("-", " ").toUpperCase()}\n`;
     recommendation += `• RSI: ${rsi.toFixed(0)} (${rsi > 70 ? "Overbought" : rsi < 30 ? "Oversold" : "Neutral"})\n`;
-    recommendation += `• Volatility: ${volatility.toFixed(2)}%\n`;
+    recommendation += `• Volatility(24h): ${volatility.toFixed(2)}%\n`;
     recommendation += `• MACD: ${macd.histogram > 0 ? "Bullish" : "Bearish"}\n\n`;
 
     if (trend === "strong-bullish" && rsi < 70) {
-      recommendation += `💚 *STRONG BUY SIGNAL* 💚\nMultiple indicators align for upward movement.\nEntry: $${currentPrice.toFixed(2)}\nStop-loss: $${sma20.toFixed(2)}\nTarget: $${(currentPrice * 1.05).toFixed(2)} (+5%)\n`;
+      recommendation += `💚 *STRONG BUY CONDITIONS* (educational)\nEntry: $${currentPrice.toFixed(2)}\nInvalidation: $${sma20.toFixed(2)}\nTargets: $${(currentPrice * 1.02).toFixed(2)}, $${(currentPrice * 1.035).toFixed(2)}\n`;
     } else if (trend === "weak-bullish") {
-      recommendation += `🟡 *CAUTIOUS BUY* 🟡\nModerate bullish signals. Wait for confirmation.\nEntry above: $${(currentPrice * 1.01).toFixed(2)}\n`;
+      recommendation += `🟡 *CAUTIOUS BUY*\nPrefer confirmation above: $${(currentPrice * 1.01).toFixed(2)}\n`;
     } else if (trend === "weak-bearish") {
-      recommendation += `🟠 *CAUTION ADVISED* 🟠\nBearish pressure building. Consider reducing exposure.\n`;
+      recommendation += `🟠 *CAUTION*\nBearish pressure building. Reduce risk / wait for reversal.\n`;
     } else if (trend === "strong-bearish") {
-      recommendation += `🔴 *SELL/AVOID* 🔴\nStrong downward momentum. Wait for reversal signals.\n`;
+      recommendation += `🔴 *AVOID / SELL BIASED*\nStrong down momentum. Wait for higher lows.\n`;
     }
 
-    if (rsi > 70) recommendation += `\n⚠️ RSI indicates OVERBOUGHT conditions - profit-taking may be wise.`;
-    else if (rsi < 30) recommendation += `\n⚠️ RSI indicates OVERSOLD conditions - potential bounce opportunity.`;
-
-    recommendation += `\n\n📊 *Prediction Outlook:*\n${generatePrediction(analysis, symbol)}`;
-    recommendation += `\n\n⚡ *Trading Tip:* ${volatility > 5 ? "High volatility - use smaller position sizes." : "Normal market conditions."}`;
+    recommendation += `\n📊 *Prediction:* ${formatPrediction(analysis, symbol)}`;
+    recommendation += `\n\n⚡ Tip: ${volatility > 6 ? "High volatility — reduce position size" : "Normal conditions."}`;
     return recommendation;
   }
-  async function getMarketSentiment(symbol) {
-    try {
-      const news = await fetchNews(symbol, symbol);
-      let sentimentScore = 50;
-      if (news.length > 0) {
-        const positive = ["up", "bull", "gain", "surge", "rally", "positive", "growth"];
-        const negative = ["down", "bear", "drop", "crash", "fall", "negative", "loss"];
-        news.forEach((n) => {
-          const t = n.title.toLowerCase();
-          positive.forEach((w) => { if (t.includes(w)) sentimentScore += 2; });
-          negative.forEach((w) => { if (t.includes(w)) sentimentScore -= 2; });
-        });
-        sentimentScore = Math.max(0, Math.min(100, sentimentScore));
-      }
-      return sentimentScore;
-    } catch {
-      return 50;
-    }
-  }
 
-  /* ---------- Conversation ---------- */
+  /* ---------- Conversation engine ---------- */
   async function askAI(question) {
-    const q = question.toLowerCase();
+    const q = (question || "").toLowerCase();
     const user = userName || "there";
+    const stamp = { source: "Binance proxy + APIs", at: utcNow() };
+
+    // 1) ALERT INTENT: "set alert BTC above 65000", "alert ETH percent > 5", "alert SOL volume below 5e6"
+    const alertIntent = parseAlertIntent(q);
+    if (alertIntent) {
+      const symbol = alertIntent.symbol;
+      // resolve minimal coin object for alert creation
+      const coinId = (symbol || "").toLowerCase();
+      const name = symbol;
+      try {
+        await addAlert({
+          coinId,
+          symbol,
+          name,
+          type: alertIntent.type,
+          op: alertIntent.op,
+          value: alertIntent.value,
+        });
+        return {
+          text: `🔔 Alert created for *${symbol}*: ${alertIntent.type === "price" ? "price" : alertIntent.type === "pct24h" ? "24h %" : "24h volume"} ${alertIntent.op} ${alertIntent.value}`,
+          meta: stamp,
+        };
+      } catch (e) {
+        // AlertsContext handles 402 by opening paywall. Provide a clear chat text as well.
+        const msg = e?.message || "Could not create alert";
+        const upsell = (limits?.plan !== "pro" && limits?.used >= limits?.max)
+          ? `\n\nYou’ve used your ${limits.max} free alerts. Upgrade to Pro for unlimited alerts — I’ve opened the upgrade panel.`
+          : "";
+        return { text: `⚠️ ${msg}${upsell}`, meta: stamp };
+      }
+    }
+
     try {
-      if (q.includes("how are you") || q.includes("how're you")) {
-        return `I'm doing excellent, ${user}! 😊 My systems are fully operational and I'm analyzing market data in real-time. Ready to help you navigate the crypto markets!`;
+      if (q.includes("how are you")) {
+        return { text: `I'm great, ${user}! Systems green and data live. How can I help?`, meta: stamp };
       }
       if (q.includes("your name") || q.includes("who are you")) {
-        return `I'm CryptoAlpha Pro, your advanced AI trading assistant! 🤖 I combine real-time market data with predictive analytics to help you make informed trading decisions.`;
+        return { text: `I'm CryptoAlpha Pro — real-time crypto assistant with structured trade plans, confidence, invalidations & built-in alerts.`, meta: stamp };
       }
       if (q.includes("my name is") && !userName) {
-        const m = q.match(/my name is (\w+)/i);
-        if (m && m[1]) { const n = m[1]; setUserName(n); return `Wonderful to meet you, ${n}! 👋 I'll remember your name for our future conversations. How can I assist with your crypto journey today?`; }
-      }
-      if (q.includes("what should i call you")) return `You can call me CryptoAlpha! 🤖 I'm your 24/7 trading companion, always ready with market insights and analysis.`;
-      if (q.includes("hello") || q.includes("hi") || q.includes("hey")) {
-        return `Hello ${user}! 👋 I'm your advanced crypto trading assistant with predictive capabilities. I can help you with:\n• AI-powered price predictions 🔮\n• Real-time market analysis 📊\n• Trading signals & strategies 📈\n• Sentiment analysis 🎯\n• Portfolio optimization 💼\n\nWhat would you like to explore today?`;
+        const m = q.match(/my name is ([a-z0-9_]+)/i);
+        if (m && m[1]) { const n = m[1]; setUserName(n); }
+        return { text: `Nice to meet you! I’ll tailor insights to your style.`, meta: stamp };
       }
       if (q.includes("help") || q.includes("what can you do")) {
-        return `🤖 *ADVANCED CAPABILITIES:*\n\n• *Predictive Analytics* - "Predict BTC price"\n• *Market Analysis* - "Analyze ETH technically"\n• *Trading Signals* - "Should I buy SOL now?"\n• *Trend Identification* - "What's hot right now?"\n• *Sentiment Analysis* - "Market sentiment for ADA"\n• *Risk Assessment* - "Volatility analysis"\n• *Portfolio Strategy* - "Diversification tips"\n\nTry: "Predict BTC next week" or "Analyze market sentiment"`;
+        return {
+          text:
+            "I can: \n• Predictive outlooks 🔮\n• Structured trade plans (entry, invalidation, targets)\n• Trending coins & risk checks\n• Sentiment & quick news\n• Set live alerts from chat (try: “set alert BTC above 65000”)\n\nFree plan includes 2 alerts; upgrade to Pro for unlimited.",
+          meta: stamp,
+        };
       }
-      if ((q.includes("predict") || q.includes("forecast") || q.includes("will") || q.includes("going to")) && !q.includes("how")) {
-        const coinPattern = /(bitcoin|btc|ethereum|eth|bnb|solana|sol|cardano|ada|xrp|dogecoin|doge|polkadot|dot|shiba|shib|avax|matic|link)/i;
-        const coinMatch = q.match(coinPattern);
-        const coinSymbol = coinMatch ? coinMatch[0] : "BTC";
-        const normalizedSymbol = coinSymbol === "bitcoin" ? "BTC" : coinSymbol === "ethereum" ? "ETH" : coinSymbol.toUpperCase();
-        const analysis = await analyzeMarketCondition(normalizedSymbol);
-        return generatePrediction(analysis, normalizedSymbol);
-      }
-      if (q.includes("sentiment") || q.includes("mood") || q.includes("feeling")) {
-        const coinPattern = /(bitcoin|btc|ethereum|eth|bnb|solana|sol|cardano|ada|xrp|dogecoin|doge)/i;
-        const coinMatch = q.match(coinPattern);
-        const coinSymbol = coinMatch ? coinMatch[0] : "crypto";
-        if (coinSymbol === "crypto") {
-          const btc = await getMarketSentiment("BTC");
-          const eth = await getMarketSentiment("ETH");
-          return `🌡️ *Overall Market Sentiment:*\n\n• Bitcoin: ${btc}/100 ${btc > 60 ? "😊" : btc < 40 ? "😟" : "😐"}\n• Ethereum: ${eth}/100 ${eth > 60 ? "😊" : eth < 40 ? "😟" : "😐"}\n\nMarket is ${(btc + eth) / 2 > 60 ? "generally optimistic" : (btc + eth) / 2 < 40 ? "showing concern" : "in neutral territory"}.`;
-        } else {
-          const normalized = coinSymbol === "bitcoin" ? "BTC" : coinSymbol === "ethereum" ? "ETH" : coinSymbol.toUpperCase();
-          const s = await getMarketSentiment(normalized);
-          return `🌡️ *${normalized} Market Sentiment:* ${s}/100\n\n${s > 70 ? "😊 Very Bullish" : s > 60 ? "🙂 Bullish" : s > 40 ? "😐 Neutral" : s > 30 ? "🙁 Bearish" : "😟 Very Bearish"}\n\nBased on news and market data analysis.`;
-        }
-      }
-      if (q.includes("trending") || q.includes("hot") || q.includes("best coins") || q.includes("what should i trade") || q.includes("opportunit")) {
+
+      // quick trending
+      if (q.includes("trending") || q.includes("hot") || q.includes("what should i trade") || q.includes("opportunit")) {
         const trending = await getTrendingCoins(5);
-        if (!trending.length) return "I couldn't fetch trending data right now. Please try again in a few moments.";
-        let response = `🔥 *TOP TRENDING COINS - Real-time Analysis:*\n\n`;
-        for (const [index, coin] of trending.entries()) {
-          const emoji = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : "•";
-          const analysis = await analyzeMarketCondition(coin.symbol);
-          const trendEmoji = analysis?.trend === "strong-bullish" ? "🚀" : analysis?.trend === "weak-bullish" ? "↗️" : analysis?.trend === "weak-bearish" ? "↘️" : "🔻";
-          response += `${emoji} ${trendEmoji} *${coin.symbol.toUpperCase()}*: $${coin.priceUsdt.toFixed(2)} (+${coin.changePercent24Hr.toFixed(2)}%)\n`;
-          response += `   Volume: $${(coin.volumeUsd24Hr / 1_000_000).toFixed(1)}M | Trend: ${analysis?.trend.replace("-", " ").toUpperCase()}\n\n`;
+        if (!trending.length) return { text: "I couldn’t fetch trending data. Try again soon.", meta: stamp };
+        let response = `🔥 *Top Momentum (live)*\n\n`;
+        for (const [i, coin] of trending.entries()) {
+          const emoji = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "•";
+          response += `${emoji} ${coin.symbol.toUpperCase()}: $${coin.priceUsdt.toFixed(2)} (${pctNum(coin.changePercent24Hr)})\n`;
         }
-        response += `💡 *AI INSIGHT:* These coins show strong momentum and volume. Consider:\n• Small position sizes due to high volatility\n• Setting tight stop-losses\n• Taking profits at 5-10% gains\n\nAlways verify with recent news!`;
-        return response;
+        response += `\nTip: Set alerts right from here. Example: “set alert ${trending[0].symbol} above ${trending[0].priceUsdt.toFixed(2)}”`;
+        return { text: response, meta: stamp };
       }
 
-      const coinPattern = /(bitcoin|btc|ethereum|eth|bnb|solana|sol|cardano|ada|xrp|ripple|dogecoin|doge|polkadot|dot|shiba|shib|avax|avalanche|matic|polygon|link|chainlink|litecoin|ltc|uniswap|uni)/i;
-      const coinMatch = q.match(coinPattern);
-      const coinSymbol = coinMatch ? coinMatch[0] : null;
-      const map = {
-        bitcoin: "BTC", btc: "BTC", ethereum: "ETH", eth: "ETH", bnb: "BNB",
-        solana: "SOL", sol: "SOL", cardano: "ADA", ada: "ADA",
-        xrp: "XRP", ripple: "XRP", dogecoin: "DOGE", doge: "DOGE",
-        polkadot: "DOT", dot: "DOT", shiba: "SHIB", shib: "SHIB",
-        avax: "AVAX", avalanche: "AVAX", matic: "MATIC", polygon: "MATIC",
-        link: "LINK", chainlink: "LINK", litecoin: "LTC", ltc: "LTC",
-        uniswap: "UNI", uni: "UNI",
-      };
-      const normalizedSymbol = coinSymbol ? (map[coinSymbol.toLowerCase()] || coinSymbol.toUpperCase()) : null;
+      // coin detection
+      const symbol = extractSymbol(q);
 
-      if ((q.includes("price") || q.includes("how much") || q.includes("value")) && normalizedSymbol) {
-        try {
-          const data = await fetchCoin(normalizedSymbol);
-          const price = data.priceUsdt.toFixed(2);
-          const change = data.changePercent24Hr.toFixed(2);
-          const changeEmoji = change >= 0 ? "📈" : "📉";
-          const analysis = await analyzeMarketCondition(normalizedSymbol);
-          let response = `${changeEmoji} *${normalizedSymbol}*: $${price} (${change >= 0 ? "+" : ""}${change}%)\n\n`;
-          response += `📊 *Quick Analysis:*\n`;
-          response += `• Trend: ${analysis?.trend.replace("-", " ").toUpperCase()}\n`;
-          response += `• Volatility: ${analysis?.volatility.toFixed(1)}%\n`;
-          response += `• RSI: ${analysis?.rsi.toFixed(0)} ${analysis?.rsi > 70 ? "(Overbought)" : analysis?.rsi < 30 ? "(Oversold)" : ""}\n\n`;
-          response += `💡 ${change >= 0 ? "Bullish momentum" : "Bearish pressure"} detected.`;
-          return response;
-        } catch {
-          return `⚠️ Sorry, I couldn't fetch the price for ${normalizedSymbol} right now. Please try again later.`;
+      if (symbol) {
+        if (q.includes("predict") || q.includes("forecast")) {
+          const a = await analyzeMarketCondition(symbol);
+          const plan = buildPlan(symbol, a);
+          return { text: formatPrediction(a, symbol), meta: { ...stamp, plan } };
         }
-      }
 
-      if ((q.includes("market cap") || q.includes("volume") || q.includes("high") || q.includes("low")) && normalizedSymbol) {
-        try {
-          const marketData = await fetchMarketData(normalizedSymbol.toLowerCase());
-          if (marketData) {
-            return `📊 *${normalizedSymbol} Market Data:*\n• Market Cap: *$${(marketData.market_cap / 1e9).toFixed(2)}B*\n• 24h Volume: *$${(marketData.total_volume / 1e9).toFixed(2)}B*\n• 24h High: *$${marketData.high_24h?.toFixed(2) || "N/A"}*\n• 24h Low: *$${marketData.low_24h?.toFixed(2) || "N/A"}*`;
+        if (q.includes("price") || q.includes("how much") || q.includes("value")) {
+          try {
+            const data = await fetchCoin(symbol);
+            const change = data.changePercent24Hr;
+            const emoji = change >= 0 ? "📈" : "📉";
+            const a = await analyzeMarketCondition(symbol);
+            const plan = buildPlan(symbol, a);
+            const line1 = `${emoji} *${symbol}*: $${data.priceUsdt.toFixed(2)} (${change >= 0 ? "+" : ""}${change.toFixed(2)}%)`;
+            const quick = a
+              ? `\n• Trend: ${a.trend.replace("-", " ").toUpperCase()} | RSI ${a.rsi.toFixed(0)} | Vol ${a.volatility.toFixed(1)}%`
+              : `\n• Snapshot loaded.`;
+            return { text: `${line1}${quick}\n\n${formatPrediction(a, symbol)}`, meta: { ...stamp, plan } };
+          } catch {
+            return { text: `I couldn’t fetch the price for ${symbol} right now. Try again later.`, meta: stamp };
           }
-          return `ℹ️ Market data for ${normalizedSymbol} is currently unavailable.`;
-        } catch {
-          return "⚠️ Sorry, I couldn't fetch market data right now.";
         }
-      }
 
-      if ((q.includes("should i") || q.includes("buy") || q.includes("sell") || q.includes("trade") || q.includes("analysis") || q.includes("analyze") || q.includes("prediction")) && normalizedSymbol) {
-        const analysis = await analyzeMarketCondition(normalizedSymbol);
-        return generateRecommendation(analysis, normalizedSymbol);
-      }
+        if (q.includes("analysis") || q.includes("analyze") || q.includes("should i") || q.includes("buy") || q.includes("sell") || q.includes("trade")) {
+          const a = await analyzeMarketCondition(symbol);
+          const plan = buildPlan(symbol, a);
+          return { text: formatRecommendation(a, symbol), meta: { ...stamp, plan } };
+        }
 
-      if ((q.includes("news") || q.includes("update") || q.includes("what's happening")) && normalizedSymbol) {
-        try {
-          const news = await fetchNews(normalizedSymbol, normalizedSymbol);
-          if (news.length) {
-            let response = `📰 *Latest ${normalizedSymbol} News:*\n\n`;
-            news.slice(0, 3).forEach((item, i) => {
-              response += `${i + 1}. ${item.title}\n   Source: ${item.source}\n   Read: ${item.url}\n\n`;
+        if (q.includes("news") || q.includes("update")) {
+          try {
+            const news = await fetchNews(symbol, symbol);
+            if (!news.length) return { text: `No recent major headlines on ${symbol}.`, meta: stamp };
+            let txt = `📰 *${symbol} — Latest Headlines:*\n\n`;
+            news.slice(0, 3).forEach((n, i) => {
+              txt += `${i + 1}. ${n.title}\n   Source: ${n.source}\n   Read: ${n.url}\n\n`;
             });
-            return response;
+            return { text: txt, meta: stamp };
+          } catch {
+            return { text: "News fetch failed. Please try again.", meta: stamp };
           }
-          return `ℹ️ No recent news found for ${normalizedSymbol}. Check back later!`;
-        } catch {
-          return "⚠️ Sorry, I couldn't fetch news right now.";
         }
+
+        // default when symbol found
+        return {
+          text: `I can build a trade plan for ${symbol}: prediction, invalidation, and targets.\nTry “Predict ${symbol}” or “${symbol} analysis”.\n\nWant alerts? Say: “set alert ${symbol} above 1234”`,
+          meta: stamp,
+        };
       }
 
+      // market overview
       if (q.includes("market") && (q.includes("overview") || q.includes("summary") || q.includes("how is the market"))) {
         try {
           const btc = await fetchCoin("BTC");
           const eth = await fetchCoin("ETH");
           const trending = await getTrendingCoins(3);
-          const btcSentiment = await getMarketSentiment("BTC");
-          let response = `🌐 *MARKET OVERVIEW - Real-time Analysis:*\n\n`;
-          response += `• *BTC:* $${btc.priceUsdt.toFixed(2)} (${btc.changePercent24Hr >= 0 ? "+" : ""}${btc.changePercent24Hr.toFixed(2)}%)\n`;
-          response += `• *ETH:* $${eth.priceUsdt.toFixed(2)} (${eth.changePercent24Hr >= 0 ? "+" : ""}${eth.changePercent24Hr.toFixed(2)}%)\n`;
-          response += `• *Market Sentiment:* ${btcSentiment}/100 ${btcSentiment > 60 ? "😊 Bullish" : btcSentiment < 40 ? "😟 Bearish" : "😐 Neutral"}\n\n`;
+          let response = `🌐 *MARKET OVERVIEW (live)*\n\n`;
+          response += `• BTC: $${btc.priceUsdt.toFixed(2)} (${btc.changePercent24Hr >= 0 ? "+" : ""}${btc.changePercent24Hr.toFixed(2)}%)\n`;
+          response += `• ETH: $${eth.priceUsdt.toFixed(2)} (${eth.changePercent24Hr >= 0 ? "+" : ""}${eth.changePercent24Hr.toFixed(2)}%)\n`;
           if (trending.length > 0) {
-            response += `🔥 *Top Performers:*\n`;
-            trending.slice(0, 3).forEach((c) => { response += `• ${c.symbol.toUpperCase()}: +${c.changePercent24Hr.toFixed(2)}%\n`; });
+            response += `\n🔥 *Top Performers:*\n`;
+            trending.forEach((c) => { response += `• ${c.symbol.toUpperCase()}: +${(c.changePercent24Hr || 0).toFixed(2)}%\n`; });
           }
-          response += `\n💡 *AI ASSESSMENT:* The market is ${btc.changePercent24Hr >= 0 ? "showing strength" : "under pressure"} with ${btcSentiment > 60 ? "positive" : "cautious"} sentiment.`;
-          return response;
+          response += `\nTip: Ask “set alert BTC above ${btc.priceUsdt.toFixed(2)}”`;
+          return { text: response, meta: stamp };
         } catch {
-          return "⚠️ Sorry, I couldn't fetch market overview right now.";
+          return { text: "I couldn’t fetch the overview. Try again shortly.", meta: stamp };
         }
       }
 
+      // risk guidance
       if (q.includes("risk") || q.includes("volatility") || q.includes("safe")) {
-        return `⚠️ *RISK ASSESSMENT GUIDELINES:*\n\n• Cryptocurrencies are HIGHLY volatile (5-20% daily moves common)\n• Never invest more than you can afford to lose\n• Diversify across 3-5 different coins\n• Use stop-loss orders always\n• Consider: 70% BTC/ETH, 30% altcoins for beginners\n\nI can analyze specific coin volatility if you ask!`;
+        return {
+          text:
+            "⚠️ *Risk Basics:*\n• Crypto is highly volatile (5–20% daily swings)\n• Always use invalidations (stop-loss)\n• Position-size by volatility\n• Diversify 3–5 assets\n\nAsk a coin: “Analyze SOL”.",
+          meta: stamp,
+        };
       }
 
-      if (q.includes("thank") || q.includes("thanks") || q.includes("appreciate")) {
-        return `You're very welcome ${user}! 😊 It's my pleasure to help you navigate these exciting markets. Remember: always do your own research and never invest based on single opinions!\n\nIs there anything else you'd like me to analyze?`;
+      if (q.includes("thanks") || q.includes("thank")) {
+        return { text: `You’re welcome, ${user}! Want a plan for BTC or your favorite coin?`, meta: stamp };
       }
 
-      if (normalizedSymbol) {
-        return `I see you're asking about ${normalizedSymbol}. I can provide:\n• Advanced technical analysis\n• Price predictions\n• Trading signals\n• Sentiment analysis\n• Risk assessment\n\nTry: "Predict ${normalizedSymbol} price" or "Analyze ${normalizedSymbol} technically"`;
-      }
-
-      return `I want to make sure I understand you correctly. I'm your advanced AI trading assistant with these capabilities:\n\n• 🤖 Predictive analytics & forecasting\n• 📊 Advanced technical analysis\n• 🎯 Market sentiment tracking\n• ⚡ Real-time trading signals\n• 📰 News & social media analysis\n• 💼 Portfolio risk assessment\n\nTry asking about specific coins, predictions, or market conditions!`;
+      // fallback
+      return {
+        text:
+          "I create actionable, *structured* plans with entry, invalidation, targets + confidence. Ask about any coin (e.g., “Predict BTC”).\n\nI can also set alerts: “set alert ETH above 3500”. Free plan has 2 alerts; upgrade to Pro for unlimited.",
+        meta: stamp,
+      };
     } catch (e) {
       console.error("AI Error:", e);
-      return "⚠️ Sorry, I'm experiencing technical difficulties. The markets are moving fast and my systems are working hard. Please try again in a moment.";
+      return { text: "⚠️ I hit an error. Please try again.", meta: stamp };
     }
   }
 
@@ -377,8 +417,10 @@ export default function AIChatBot() {
     setLoading(true);
     setInput("");
     simulateTyping(async () => {
-      const replyText = await askAI(input);
-      const reply = { from: "bot", text: replyText, timestamp: new Date() };
+      const res = await askAI(input);
+      const reply = typeof res === "string"
+        ? { from: "bot", text: res, timestamp: new Date() }
+        : { from: "bot", text: res.text, meta: res.meta, timestamp: new Date() };
       setMessages((m) => [...m, reply]);
       setLoading(false);
     }, 800);
@@ -386,7 +428,7 @@ export default function AIChatBot() {
 
   const formatTime = (d) => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const formatMessage = (text) =>
-    text
+    String(text || "")
       .replace(/\*(.*?)\*/g, '<strong class="font-bold text-cyan-300">$1</strong>')
       .replace(/\n/g, "<br />")
       .replace(/💚/g, '<span class="text-green-400">💚</span>')
@@ -405,9 +447,52 @@ export default function AIChatBot() {
       .replace(/💡/g, '<span class="text-yellow-200">💡</span>')
       .replace(/🚀/g, '<span class="text-green-300">🚀</span>');
 
+  function PlanCard({ plan }) {
+    if (!plan) return null;
+    const bull = plan.bias.includes("bullish");
+    return (
+      <div className="mt-2 rounded-xl border border-slate-700 bg-slate-900/70 p-3 text-xs">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-1.5">
+            <Activity className={`h-4 w-4 ${bull ? "text-emerald-400" : "text-rose-400"}`} />
+            <span className="font-semibold">{plan.symbol} • {plan.timeframe}</span>
+            <span className={`px-2 py-0.5 rounded-full ${bull ? "bg-emerald-500/10 text-emerald-300" : "bg-rose-500/10 text-rose-300"}`}>
+              {plan.bias.replace("-", " ")}
+            </span>
+          </div>
+          <span className="text-slate-400">Conf: {plan.confidence}%</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <div>Entry: <span className="text-slate-200">${plan.entry.toFixed(2)}</span></div>
+          <div>Invalid: <span className="text-slate-200">${plan.invalid.toFixed(2)}</span></div>
+          <div>Target 1: <span className="text-slate-200">${plan.targets[0].toFixed(2)}</span></div>
+          <div>Target 2: <span className="text-slate-200">${plan.targets[1].toFixed(2)}</span></div>
+        </div>
+        <div className="mt-2 text-[11px] text-slate-400">
+          Note: Educational plan. Use your own risk controls.
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {[
+            { label: "Set alert @ invalidation", q: `set alert ${plan.symbol} below ${plan.invalid.toFixed(2)}` },
+            { label: "Set alert @ T1", q: `set alert ${plan.symbol} above ${plan.targets[0].toFixed(2)}` },
+            { label: "Explain risk", q: `Explain risk for ${plan.symbol} ${plan.timeframe} plan` },
+          ].map((a, i) => (
+            <button
+              key={i}
+              onClick={() => { setInput(a.q); setTimeout(() => send(), 50); }}
+              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
-      {/* FAB – sits ABOVE the bottom nav (uses --mobile-dock-h on mobile) */}
+      {/* FAB */}
       <motion.button
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
@@ -419,7 +504,7 @@ export default function AIChatBot() {
         <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full" />
       </motion.button>
 
-      {/* Overlay/backdrop for the panel */}
+      {/* Overlay */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -446,23 +531,14 @@ export default function AIChatBot() {
             transition={{ type: "spring", damping: 22, stiffness: 260 }}
             className={[
               "fixed z-50 glass rounded-2xl flex flex-col overflow-hidden shadow-xl border border-slate-700/50",
-              isMobile
-                ? "left-0 right-0 mx-2 rounded-b-none rounded-t-2xl"
-                : "right-6"
+              isMobile ? "left-0 right-0 mx-2 rounded-b-none rounded-t-2xl" : "right-6"
             ].join(" ")}
             style={
               isMobile
-                ? {
-                    bottom: `calc(var(--mobile-dock-h, 0px) + env(safe-area-inset-bottom))`,
-                    maxHeight: "min(78vh, 720px)",
-                  }
-                : {
-                    bottom: "24px",
-                    width: "420px",
-                    height: "520px",
-                  }
+                ? { bottom: `calc(var(--mobile-dock-h, 0px) + env(safe-area-inset-bottom))`, maxHeight: "min(78vh, 720px)" }
+                : { bottom: "24px", width: "420px", height: "520px" }
             }
-            onClick={(e) => e.stopPropagation()} // avoid closing when clicking inside
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className={`flex items-center justify-between p-4 border-b border-slate-700 ${isMobile ? "bg-slate-900/90" : "bg-gradient-to-r from-purple-800 to-blue-900"}`}>
@@ -472,7 +548,7 @@ export default function AIChatBot() {
                 </div>
                 <div>
                   <span className="font-semibold text-white">CryptoAlpha Pro</span>
-                  <div className="text-xs text-slate-300">AI Predictive Trading Assistant</div>
+                  <div className="text-xs text-slate-300">Live insights • Structured plans • Alerts</div>
                 </div>
               </div>
               <button
@@ -502,7 +578,21 @@ export default function AIChatBot() {
 
                   <div className={`max-w-[80%] md:max-w-[75%] rounded-2xl p-3 ${m.from === "bot" ? "bg-slate-800 text-slate-200 rounded-bl-none border-l-2 border-cyan-500" : "bg-blue-600 text-white rounded-br-none border-r-2 border-blue-400"}`}>
                     <div className="text-[13px] md:text-sm message-content" dangerouslySetInnerHTML={{ __html: formatMessage(m.text) }} />
-                    <div className={`text-[11px] md:text-xs mt-1 ${m.from === "bot" ? "text-slate-400" : "text-blue-200"}`}>{formatTime(m.timestamp)}</div>
+
+                    {m.meta?.plan && <PlanCard plan={m.meta.plan} />}
+
+                    {m.from === "bot" && (
+                      <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        <span>Data: {m.meta?.source || "API"}</span>
+                        <span>•</span>
+                        <span>{m.meta?.at || utcNow()}</span>
+                      </div>
+                    )}
+
+                    <div className={`text-[11px] md:text-xs mt-1 ${m.from === "bot" ? "text-slate-400" : "text-blue-200"}`}>
+                      {formatTime(m.timestamp)}
+                    </div>
                   </div>
 
                   {m.from === "user" && (
@@ -538,7 +628,7 @@ export default function AIChatBot() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   className="flex-1 rounded-xl px-4 py-3 text-sm bg-slate-900 text-white placeholder-slate-500 border border-slate-700 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                  placeholder="Ask predictions, analysis, or market insights..."
+                  placeholder="Ask predictions, analysis, or set alerts… e.g. set alert BTC above 65000"
                   onKeyDown={(e) => e.key === "Enter" && send()}
                   disabled={loading || typing}
                 />
@@ -556,11 +646,11 @@ export default function AIChatBot() {
 
               <div className="flex flex-wrap gap-1">
                 {[
-                  { label: "BTC Prediction", query: "Predict Bitcoin price next week", icon: "🔮" },
+                  { label: "BTC Prediction", query: "Predict BTC", icon: "🔮" },
                   { label: "Trending Coins", query: "What coins are trending now?", icon: "🔥" },
-                  { label: "ETH Analysis", query: "Technical analysis for Ethereum", icon: "📊" },
-                  { label: "Market Sentiment", query: "What's the market sentiment?", icon: "🌡️" },
-                  { label: "Risk Assessment", query: "How risky is crypto now?", icon: "⚠️" },
+                  { label: "ETH Analysis", query: "Analyze ETH", icon: "📊" },
+                  { label: "Market Overview", query: "Market overview", icon: "🌐" },
+                  { label: "Set Alert @ BTC 65k", query: "set alert BTC above 65000", icon: "🔔" },
                 ].map((action, index) => (
                   <motion.button
                     key={index}
@@ -573,6 +663,12 @@ export default function AIChatBot() {
                     {action.label}
                   </motion.button>
                 ))}
+              </div>
+
+              <div className="mt-2 text-[10.5px] text-slate-400">
+                {limits?.plan !== "pro"
+                  ? `Free plan: ${limits?.used || 0}/${limits?.max || 2} alerts used. Upgrade to Pro for unlimited.`
+                  : "Pro plan active — unlimited alerts 🚀"}
               </div>
             </div>
           </motion.div>
@@ -588,16 +684,8 @@ export default function AIChatBot() {
         .overflow-y-auto::-webkit-scrollbar-thumb:hover { background: linear-gradient(to bottom, #818cf8, #60a5fa); }
         .message-content { line-height: 1.5; }
         .message-content strong { font-weight: 600; }
-
-        /* FAB offsets: keep it above the bottom dock and safe area on mobile */
-        @media (max-width: 767px) {
-          .chatbot-fab {
-            bottom: calc(var(--mobile-dock-h, 0px) + env(safe-area-inset-bottom) + 12px);
-          }
-        }
-        @media (min-width: 768px) {
-          .chatbot-fab { bottom: 24px; }
-        }
+        @media (max-width: 767px) { .chatbot-fab { bottom: calc(var(--mobile-dock-h, 0px) + env(safe-area-inset-bottom) + 12px); } }
+        @media (min-width: 768px) { .chatbot-fab { bottom: 24px; } }
       `}</style>
     </>
   );
