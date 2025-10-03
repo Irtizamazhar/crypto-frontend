@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import SmartImg from "./SmartImg";
 import { fmt as fmtNum, pct as fmtPct } from "../utils/format";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import CoinCard from "./CoinCard";
+import { fetchAllNewListings } from "../services/api"; // 👈 new listings API
 
 function pickPct(c) {
   const val =
@@ -28,7 +30,9 @@ function useSparkPath(values = [], width = 90, height = 24) {
     values.forEach((v, i) => {
       const x = i * stepX;
       const y = height - ((v - min) / span) * height;
-      d += i ? ` L ${x.toFixed(2)} ${y.toFixed(2)}` : `M ${x.toFixed(2)} ${y.toFixed(2)}`;
+      d += i
+        ? ` L ${x.toFixed(2)} ${y.toFixed(2)}`
+        : `M ${x.toFixed(2)} ${y.toFixed(2)}`;
     });
     return d;
   }, [values, width, height]);
@@ -60,15 +64,23 @@ function Chip({ c }) {
         ].join(" ")}
       />
       <div className="flex items-center gap-2">
-        <SmartImg symbol={c.symbol} alt="" className="h-5 w-5 rounded-full shrink-0" />
+        <SmartImg
+          symbol={c.symbol}
+          alt=""
+          className="h-5 w-5 rounded-full shrink-0"
+        />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium truncate">{c.name}</div>
-          <div className="text-[11px] text-slate-400">{String(c.symbol ?? "").toUpperCase()}</div>
+          <div className="text-[11px] text-slate-400">
+            {String(c.symbol ?? "").toUpperCase()}
+          </div>
         </div>
         <span
           className={[
             "text-[11px] px-2 py-0.5 rounded-full shrink-0",
-            pos ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400",
+            pos
+              ? "bg-emerald-500/10 text-emerald-400"
+              : "bg-rose-500/10 text-rose-400",
           ].join(" ")}
         >
           {fmtPct(p)}
@@ -76,10 +88,22 @@ function Chip({ c }) {
       </div>
 
       <div className="mt-2 flex items-end justify-between gap-3">
-        <div className="text-sm text-slate-300">{price !== undefined ? fmtNum(price) : "—"}</div>
+        <div className="text-sm text-slate-300">
+          {price !== undefined ? fmtNum(price) : "—"}
+        </div>
         {d ? (
-          <svg width="90" height="24" viewBox="0 0 90 24" className="opacity-80">
-            <path d={d} fill="none" stroke={pos ? "rgb(34 197 94)" : "rgb(244 63 94)"} strokeWidth="2" />
+          <svg
+            width="90"
+            height="24"
+            viewBox="0 0 90 24"
+            className="opacity-80"
+          >
+            <path
+              d={d}
+              fill="none"
+              stroke={pos ? "rgb(34 197 94)" : "rgb(244 63 94)"}
+              strokeWidth="2"
+            />
           </svg>
         ) : (
           <div className="h-4 w-24 rounded bg-white/5" />
@@ -113,6 +137,36 @@ export default function TrendingStrip({ items = [], loading = false }) {
   const [canR, setCanR] = useState(false);
   const dragging = useRef({ active: false, startX: 0, scrollX: 0 });
 
+  const [listings, setListings] = useState([]);
+  const [loadingListings, setLoadingListings] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await fetchAllNewListings();
+        const now = Date.now();
+
+        // ✅ Only upcoming listings (future launches)
+        const filtered = data.filter((item) => {
+          const t = new Date(item.published_at).getTime();
+          return t > now;
+        });
+
+        // sort by nearest launch
+        filtered.sort(
+          (a, b) => new Date(a.published_at) - new Date(b.published_at)
+        );
+
+        setListings(filtered);
+      } catch (e) {
+        console.error("New listings fetch error", e);
+      } finally {
+        setLoadingListings(false);
+      }
+    }
+    load();
+  }, []);
+
   const updateArrows = useCallback(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -135,7 +189,7 @@ export default function TrendingStrip({ items = [], loading = false }) {
     };
   }, [updateArrows]);
 
-  // Drag-to-scroll (desktop)
+  // Drag-to-scroll
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -151,7 +205,8 @@ export default function TrendingStrip({ items = [], loading = false }) {
     const move = (e) => {
       if (!dragging.current.active) return;
       const x = e.pageX ?? e.touches?.[0]?.pageX ?? 0;
-      el.scrollLeft = dragging.current.scrollX - (x - dragging.current.startX);
+      el.scrollLeft =
+        dragging.current.scrollX - (x - dragging.current.startX);
     };
     const up = () => {
       dragging.current.active = false;
@@ -182,69 +237,138 @@ export default function TrendingStrip({ items = [], loading = false }) {
   };
 
   const chips = useMemo(() => {
-    if (loading) return Array.from({ length: 8 }).map((_, i) => <SkeletonChip key={`sk-${i}`} />);
+    if (loading)
+      return Array.from({ length: 8 }).map((_, i) => (
+        <SkeletonChip key={`sk-${i}`} />
+      ));
     return items.map((it, idx) => {
       const c = it?.item || it;
       if (!c) return null;
-      return <Chip key={`${c.id}-${idx}`} c={c} />;
+      return <CoinCard key={`${c.id}-${idx}`} c={c} />;
     });
   }, [items, loading]);
 
   return (
-    <section className="relative">
-      {/* Title row */}
-      <div className="mb-2 flex items-center justify-between px-1">
-        <h3 className="text-sm font-medium text-slate-300 tracking-wide">Trending Markets</h3>
-        <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400">live 24h</span>
-      </div>
+    <div className="space-y-8">
+      {/* 🚀 New Listings Section */}
+      <section className="relative">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h3 className="text-sm font-medium text-slate-300 tracking-wide">
+            🚀 New Listings
+          </h3>
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400">
+            upcoming
+          </span>
+        </div>
+        <div className="relative glass p-3 rounded-2xl">
+          <ul
+            className="flex gap-3 overflow-x-auto snap-x snap-mandatory select-none cursor-grab"
+            style={{ overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
+          >
+            {loadingListings ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <SkeletonChip key={`nl-${i}`} />
+              ))
+            ) : listings.length > 0 ? (
+              listings.slice(0, 10).map((coin, idx) => (
+                <a
+                  key={idx}
+                  href={coin.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-[200px] md:min-w-[240px] px-3 py-3 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition"
+                >
+                  <h4 className="text-sm font-semibold text-white truncate">
+                    {coin.title}
+                  </h4>
 
-      <div className="relative glass p-3 rounded-2xl">
-        {/* Horizontal list (scrollbar hidden) */}
-        <ul
-          ref={scrollerRef}
-          id="tscroll"
-          className="flex gap-3 overflow-x-auto snap-x snap-mandatory select-none cursor-grab"
-          style={{ overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch" }}
-        >
-          {chips}
-        </ul>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Exchange:{" "}
+                    <span className="text-purple-400 font-medium">
+                      {coin.exchange || "Unknown"}
+                    </span>
+                  </p>
 
-        {/* Scoped scrollbar hide (WebKit + Firefox + old Edge) */}
-        <style>{`
-          #tscroll { -ms-overflow-style: none; scrollbar-width: none; }
-          #tscroll::-webkit-scrollbar { display: none; height: 0; }
-        `}</style>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Launch:{" "}
+                    {coin.published_at
+                      ? new Date(coin.published_at).toLocaleString(undefined, {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })
+                      : "TBA"}
+                  </p>
+                </a>
+              ))
+            ) : (
+              <p className="text-slate-500 text-sm">No new listings.</p>
+            )}
+          </ul>
+        </div>
+      </section>
 
-        {/* Edge fades */}
-        <div className="pointer-events-none absolute inset-y-3 left-0 w-10 bg-gradient-to-r from-slate-900/60 to-transparent rounded-l-2xl" />
-        <div className="pointer-events-none absolute inset-y-3 right-0 w-10 bg-gradient-to-l from-slate-900/60 to-transparent rounded-r-2xl" />
+      {/* 📊 Trending Section */}
+      <section className="relative">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h3 className="text-sm font-medium text-slate-300 tracking-wide">
+            Trending Markets
+          </h3>
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400">
+            live 24h
+          </span>
+        </div>
 
-        {/* Arrow controls */}
-        <button
-          onClick={() => scrollBy(-260)}
-          disabled={!canL}
-          aria-label="Scroll left"
-          className={[
-            "absolute left-1 top-1/2 -translate-y-1/2 grid place-items-center h-8 w-8 rounded-full",
-            "bg-white/10 backdrop-blur hover:bg-white/20 border border-white/20",
-            "transition disabled:opacity-40 disabled:pointer-events-none",
-          ].join(" ")}
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <button
-          onClick={() => scrollBy(260)}
-          disabled={!canR}
-          aria-label="Scroll right"
-          className={[
-            "absolute right-1 top-1/2 -translate-y-1/2 grid place-items-center h-8 w-8 rounded-full",
-            "bg-white/10 backdrop-blur hover:bg-white/20 border border-white/20",
-            "transition disabled:opacity-40 disabled:pointer-events-none",
-          ].join(" ")}
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
-    </section>
+        <div className="relative glass p-3 rounded-2xl">
+          <ul
+            ref={scrollerRef}
+            id="tscroll"
+            className="flex gap-3 overflow-x-auto snap-x snap-mandatory select-none cursor-grab"
+            style={{
+              overscrollBehaviorX: "contain",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {chips}
+          </ul>
+
+          <style>{`
+            #tscroll { -ms-overflow-style: none; scrollbar-width: none; }
+            #tscroll::-webkit-scrollbar { display: none; height: 0; }
+          `}</style>
+
+          <div className="pointer-events-none absolute inset-y-3 left-0 w-10 bg-gradient-to-r from-slate-900/60 to-transparent rounded-l-2xl" />
+          <div className="pointer-events-none absolute inset-y-3 right-0 w-10 bg-gradient-to-l from-slate-900/60 to-transparent rounded-r-2xl" />
+
+          <button
+            onClick={() => scrollBy(-260)}
+            disabled={!canL}
+            aria-label="Scroll left"
+            className={[
+              "absolute left-1 top-1/2 -translate-y-1/2 grid place-items-center h-8 w-8 rounded-full",
+              "bg-white/10 backdrop-blur hover:bg-white/20 border border-white/20",
+              "transition disabled:opacity-40 disabled:pointer-events-none",
+            ].join(" ")}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={() => scrollBy(260)}
+            disabled={!canR}
+            aria-label="Scroll right"
+            className={[
+              "absolute right-1 top-1/2 -translate-y-1/2 grid place-items-center h-8 w-8 rounded-full",
+              "bg-white/10 backdrop-blur hover:bg-white/20 border border-white/20",
+              "transition disabled:opacity-40 disabled:pointer-events-none",
+            ].join(" ")}
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }

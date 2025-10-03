@@ -6,9 +6,10 @@ import { LoadingProvider } from "./context/LoadingContext";
 import { AlertsProvider } from "./context/AlertsContext";
 import { ToastProvider, useToast } from "./components/ToastHub";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { PaywallProvider } from "./context/PaywallContext"; // ✅ ADD
+import { PaywallProvider } from "./context/PaywallContext"; 
+import { PortfolioProvider } from "./context/PortfolioContext"; 
 
-// Layouts
+
 import SiteLayout from "./layouts/SiteLayout";
 
 // Pages
@@ -118,11 +119,13 @@ export default function App() {
     return (
       <AuthProvider>
         <WatchlistProvider>
+           <PortfolioProvider> 
           <LoadingProvider>
             <ToastProvider>
               <ToastHook>{children}</ToastHook>
             </ToastProvider>
           </LoadingProvider>
+         </PortfolioProvider> 
         </WatchlistProvider>
       </AuthProvider>
     );
@@ -139,7 +142,7 @@ export default function App() {
       <AuthModalContext.Provider value={modalApi}>
         <Suspense fallback={<div className="min-h-screen grid place-items-center text-slate-300">Loading…</div>}>
           <Routes>
-            {/* ---------- SITE (with navbar/footer) ---------- */}
+     
             <Route element={<SiteLayout />}>
               {/* public */}
               <Route path="/" element={<Home />} />
@@ -179,7 +182,7 @@ export default function App() {
           </Routes>
         </Suspense>
 
-        {/* global sign-in modal */}
+       
         <SignPromptModal open={authOpen} onClose={() => setAuthOpen(false)} />
       </AuthModalContext.Provider>
     </Providers>
