@@ -15,6 +15,7 @@ import { useLoading } from "../context/LoadingContext";
 import { useAuth } from "../context/AuthContext";
 import { motion } from "framer-motion";
 import Wallets from "../components/Wallets";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 /* helpers */
 const fmtPaper = (v) => `${Number(v || 0).toLocaleString()} P`;
@@ -87,7 +88,7 @@ export default function Home() {
 
   // Paper/USDT Wallet State
   const [paper, setPaper]               = useState(0);
-  const [usdtBalance, setUsdtBalance]   = useState(0); // Changed from fiatUsd to usdtBalance
+  const [usdtBalance, setUsdtBalance]   = useState(0);
   const [streak, setStreak]             = useState(0);
   const [lastClaimAt, setLastClaimAt]   = useState(null);
   const [canClaim, setCanClaim]         = useState(false);
@@ -104,37 +105,65 @@ export default function Home() {
   const stopSocketRef = useRef(null);
   const { start, stop } = useLoading();
 
+  // Welcome Spin modal
+  const [params] = useSearchParams();
+  const nav = useNavigate();
+  const [showWelcomeSpin, setShowWelcomeSpin] = useState(false);
+  const [spinning, setSpinning] = useState(false);
+  const [spinResult, setSpinResult] = useState(null);
+  const [spinError, setSpinError] = useState("");
+
+  useEffect(() => {
+    if (isAuthed && params.get("welcome") === "1") {
+      setShowWelcomeSpin(true);
+      // clean url
+      const sp = new URLSearchParams(params);
+      sp.delete("welcome");
+      nav({ search: sp.toString() }, { replace: true });
+    }
+  }, [isAuthed, params, nav]);
+
+  const doSpin = async () => {
+    if (spinning) return;
+    setSpinError("");
+    setSpinning(true);
+    try {
+      const r = await PaperAPI.spin();
+      setSpinResult(r?.reward || 0);
+      setPaper((p) => Number(p || 0) + Number(r?.reward || 0));
+    } catch (e) {
+      setSpinError(e?.message || "Spin failed");
+    } finally {
+      setSpinning(false);
+    }
+  };
+
   // Fetch TRC20 Wallet and Paper Data
   useEffect(() => {
     let mounted = true;
-    
     if (!isAuthed) {
-      setPaper(0); 
-      setUsdtBalance(0); // Reset USDT balance
-      setStreak(0); 
-      setLastClaimAt(null); 
+      setPaper(0);
+      setUsdtBalance(0);
+      setStreak(0);
+      setLastClaimAt(null);
       setCanClaim(false);
       setTrc20Wallet(null);
       return () => { mounted = false; };
     }
-    
+
     (async () => {
       try {
-        // Fetch Paper wallet data
         const w = await PaperAPI.wallet();
         if (!mounted) return;
         setPaper(Number(w.paper || 0));
-        
-        // Fetch TRC20 wallet data for on-chain USDT balance
+
         setWalletLoading(true);
         const trc20Data = await getTrc20Wallet();
         if (!mounted) return;
-        
+
         setTrc20Wallet(trc20Data);
-        // Set USDT balance from on-chain data
         setUsdtBalance(Number(trc20Data?.usdt || 0));
-        
-        // Set streak and claim data
+
         setStreak(Number(w.streak || 0));
         const last = w.lastClaimAt ? new Date(w.lastClaimAt) : null;
         setLastClaimAt(last);
@@ -142,22 +171,16 @@ export default function Home() {
         const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
         const lastUTC  = last ? Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate()) : null;
         setCanClaim(lastUTC !== todayUTC);
-
       } catch (error) {
         console.error("Error fetching wallet data:", error);
         if (!mounted) return;
-        setTrc20Wallet({
-          address: "Address not available",
-          trx: 0,
-          usdt: 0,
-          error: error.message
-        });
+        setTrc20Wallet({ address: "Address not available", trx: 0, usdt: 0, error: error.message });
         setUsdtBalance(0);
       } finally {
         if (mounted) setWalletLoading(false);
       }
     })();
-    
+
     return () => { mounted = false; };
   }, [isAuthed, getTrc20Wallet]);
 
@@ -335,6 +358,24 @@ export default function Home() {
     <div className="mx-auto max-w-7xl">
       <TickerBar items={list} vsCurrency={cur} />
 
+      {/* Welcome Spin Modal (lightweight) */}
+      {isAuthed && showWelcomeSpin && (
+        <div className="fixed inset-0 z-[2000] bg-black/60 grid place-items-center p-4" onClick={() => setShowWelcomeSpin(false)}>
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold">🎉 Welcome Spin</h3>
+            <p className="text-sm text-slate-400 mt-1">Spin once to win bonus Paper coins.</p>
+            <div className="mt-5 flex items-center gap-3">
+              <button onClick={doSpin} disabled={spinning || spinResult !== null} className="px-4 py-2 rounded-xl bg-indigo-600 text-white disabled:opacity-50">
+                {spinning ? "Spinning…" : (spinResult !== null ? "Done" : "Spin now")}
+              </button>
+              <button onClick={() => setShowWelcomeSpin(false)} className="px-4 py-2 rounded-xl bg-white/10 text-white">Close</button>
+            </div>
+            {spinError && <div className="mt-3 text-rose-300 text-sm">{spinError}</div>}
+            {spinResult !== null && <div className="mt-3 text-emerald-300 font-semibold">You won +{spinResult} Paper!</div>}
+          </div>
+        </div>
+      )}
+
       {/* Extra bottom padding so the global dock never overlaps content */}
       <div className="px-4 py-8 space-y-10 pb-[calc(var(--mobile-dock-h,0px)+env(safe-area-inset-bottom)+12px)] md:pb-8">
         {/* HERO */}
@@ -347,11 +388,10 @@ export default function Home() {
             Earn <span className="text-amber-300 font-semibold">Paper</span> via streaks, invites &amp; TapTap Paper. USDT wallet supports deposit/withdraw.
           </p>
 
-          {/* Wallets block (updated with usdtBalance and trc20Address) */}
           <Wallets
             isAuthed={isAuthed}
             paper={paper}
-            usdtBalance={usdtBalance} // Changed from fiatUsd to usdtBalance
+            usdtBalance={usdtBalance}
             streak={streak}
             claimedToday={claimedToday}
             claiming={claiming}
@@ -393,8 +433,7 @@ export default function Home() {
         {/* FEATURE HUB */}
         <section className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <FancyActionCard to="/signals"   title="📡 Signals"        subtitle="Screeners & indicators for smart entries." badge="Pro"        tone="violet"  icon={<span>📈</span>} />
-          <FancyActionCard to="/portfolio" title="💼 Paper Trading"  subtitle="Practice orders with your Paper wallet."   badge="Earn Paper" tone="emerald" icon={<span>🧾</span>} />
-          <FancyActionCard to="/game"      title="⚡ TapTap $1"      subtitle="Daily micro-stakes challenge. Tap to play." badge="Hot"       tone="amber"   icon={<span>⚡</span>} />
+          <FancyActionCard to="/game"      title="$ Dollar Games"      subtitle="Daily micro-stakes challenge. Tap to play." badge="Hot"       tone="amber"   icon={<span>⚡</span>} />
           <FancyActionCard to="/paper"     title="📰 Earn Paper"     subtitle="TapTap Paper: notes, tips & community."    badge="New"       tone="cyan"    icon={<span>🪙</span>} />
           {isAuthed && <FancyActionCard to="/dashboard" title="📈 Dashboard" subtitle="Wallet, PnL & performance chart." tone="indigo" icon={<span>📊</span>} />}
           <FancyActionCard to="/alerts"    title="🔔 Smart Alerts"   subtitle="Notify on price/volume breakouts."        tone="violet"     icon={<span>🔍</span>} />

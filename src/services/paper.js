@@ -164,4 +164,16 @@ export const AdminPaperAPI = {
     }
     return res.json();
   },
+
+async spin() {
+    const token = getToken?.();
+    if (!token) throw new Error("Login required");
+    const res = await authedFetch("/paper/spin", { method: "POST", body: JSON.stringify({}) });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j?.message || `spin failed (${res.status})`);
+    }
+    return res.json();
+  },
+
 };

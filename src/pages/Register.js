@@ -1,33 +1,35 @@
-import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+// src/pages/Register.jsx
+import React, { useState, useEffect } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { 
-  FXStyles, 
-  StarsBackground, 
-  AuthSideArt, 
-  PasswordInput, 
-  SocialLoginButtons, 
-  AuthCard, 
-  SubmitButton, 
-  ErrorMessage 
+  FXStyles, StarsBackground, AuthSideArt, PasswordInput, 
+  SocialLoginButtons, AuthCard, SubmitButton, ErrorMessage 
 } from "../components/AuthShared";
 
 export default function Register() {
   const nav = useNavigate();
   const { register } = useAuth();
+  const [params] = useSearchParams();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // prefill from ?ref=
+  useEffect(() => {
+    const ref = params.get("ref");
+    if (ref) setReferralCode(ref);
+  }, [params]);
+
   async function onSubmit(e) {
     e.preventDefault();
     setErr("");
-    
     if (!agree) {
       setErr("Please accept Terms & Privacy to continue.");
       return;
@@ -35,8 +37,12 @@ export default function Register() {
 
     setBusy(true);
     try {
-      const u = await register(name.trim(), email.trim(), password);
-      if (u) nav("/", { replace: true });
+      // 🔵 Pass referralCode
+      const u = await register(name.trim(), email.trim(), password, { referralCode });
+      if (u) {
+        // show lucky wheel after signup
+        nav("/?welcome=1", { replace: true });
+      }
     } catch (e) {
       setErr(e?.message || "Registration failed. Please try again.");
     } finally {
@@ -48,15 +54,9 @@ export default function Register() {
     <div className="min-h-screen relative grid lg:grid-cols-2 auth-grid overflow-hidden">
       <FXStyles />
       <StarsBackground />
-
-      {/* Left: Art - Hidden on mobile */}
       <AuthSideArt />
 
-      {/* Right: Form */}
-      <AuthCard 
-        title="Create your account" 
-        subtitle="Join us and start learning & earning"
-      >
+      <AuthCard title="Create your account" subtitle="Join us and start learning & earning">
         <ErrorMessage message={err} />
 
         <form onSubmit={onSubmit} className="mt-6 space-y-5">
@@ -97,6 +97,18 @@ export default function Register() {
             </div>
           </div>
 
+          {/* 🔵 Referral code (optional) */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Referral code (optional)</label>
+            <input
+              className="w-full px-4 py-3.5 rounded-lg bg-slate-900/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 text-sm sm:text-base"
+              placeholder="ABC123XY"
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value)}
+            />
+            <p className="mt-1.5 text-[11px] text-slate-400">If someone invited you, paste their code to give them +100 Paper and you +20 Paper.</p>
+          </div>
+
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Password</label>
             <PasswordInput 
@@ -106,9 +118,6 @@ export default function Register() {
               showPassword={showPassword}
               setShowPassword={setShowPassword}
             />
-            <p className="mt-1.5 text-[11px] text-slate-400">
-              Use 8+ characters with a mix of letters, numbers & symbols.
-            </p>
           </div>
 
           <label className="flex items-start gap-3 text-sm text-slate-300 cursor-pointer">

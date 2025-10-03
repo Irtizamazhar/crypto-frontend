@@ -16,7 +16,6 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  // Initialize auth state on app start
   useEffect(() => {
     const initAuth = async () => {
       const currentToken = getToken();
@@ -48,7 +47,6 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setLoading(true);
     try {
-      // AuthAPI.login persists the token via services/api
       const { token: newToken, user: userData } = await AuthAPI.login({ email, password });
       setTokenState(newToken || getToken() || "");
       setUser(userData || null);
@@ -61,11 +59,14 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async (name, email, password) => {
+  // ✅ UPDATED: accept optional extras (like referralCode)
+  const register = async (name, email, password, extras = {}) => {
     setLoading(true);
     try {
-      // AuthAPI.register persists the token via services/api
-      const { token: newToken, user: userData, address } = await AuthAPI.register({ name, email, password });
+      const payload = { name, email, password };
+      if (extras?.referralCode) payload.referralCode = extras.referralCode;
+
+      const { token: newToken, user: userData, address } = await AuthAPI.register(payload);
       setTokenState(newToken || getToken() || "");
       setUser(userData || null);
       if (userData) localStorage.setItem("user", JSON.stringify(userData));
@@ -91,7 +92,6 @@ export function AuthProvider({ children }) {
         localStorage.setItem("user", JSON.stringify(data.user));
         return data.user;
       }
-      // If the token is invalid, force logout
       logout();
       return null;
     } catch (error) {

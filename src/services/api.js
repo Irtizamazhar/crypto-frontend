@@ -138,10 +138,14 @@ export async function publicReq(path, options = {}) {
 
 // --- Auth API ---------------------------------------------------------------
 export const AuthAPI = {
-  async register({ name, email, password }) {
+  // ✅ UPDATED: accept { referralCode } and forward it to backend
+  async register({ name, email, password, referralCode }) {
+    const body = { name, email, password };
+    if (referralCode) body.referralCode = referralCode;
+
     const data = await appReq("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify(body),
     });
     if (data?.token) setToken(data.token);
     return data;
@@ -717,4 +721,3 @@ export async function fetchAllNewListings() {
 
   return results.flatMap(r => (r.status === "fulfilled" ? r.value : []));
 }
-
