@@ -1,18 +1,20 @@
 // src/services/feed.js
-import { appReq, publicReq } from "./api";
+import { appReq, publicReq, getToken } from "./api";
 
 export const FeedAPI = {
-  // Get posts (public - no auth required)
+  // Get posts
+  // If a token exists, we use appReq so the server can include `myReaction` in results.
   list: async ({ tab = "all", q = "", limit = 20, before = null } = {}) => {
+    const qs = new URLSearchParams({ tab, q, limit: String(limit) });
+    if (before) qs.set("before", before);
+
+    const hasToken = typeof getToken === "function" && !!getToken();
+    const req = hasToken ? appReq : publicReq;
+
     try {
-      const qs = new URLSearchParams({ tab, q, limit: limit.toString() });
-      if (before) qs.set("before", before);
-      
-      console.log('📡 Fetching public feed...');
-      const response = await publicReq(`/api/feed?${qs.toString()}`);
-      return response;
+      return await req(`/api/feed?${qs.toString()}`);
     } catch (error) {
-      console.error('❌ FeedAPI.list error:', error);
+      console.error("❌ FeedAPI.list error:", error);
       throw error;
     }
   },
@@ -20,53 +22,51 @@ export const FeedAPI = {
   // Create new post (requires auth)
   create: async (payload) => {
     try {
-      console.log('📝 Creating post with auth...');
-      const response = await appReq("/api/feed", { 
-        method: "POST", 
-        body: JSON.stringify(payload) 
+      return await appReq("/api/feed", {
+        method: "POST",
+        body: JSON.stringify(payload),
       });
-      return response;
     } catch (error) {
-      console.error('❌ FeedAPI.create error:', error);
+      console.error("❌ FeedAPI.create error:", error);
       throw error;
     }
   },
 
-  // Get comments for a post (public)
+  // Get comments (public) — backend returns one-level thread with `replies: []`
   comments: async (postId) => {
     try {
-      const response = await publicReq(`/api/feed/${postId}/comments`);
-      return response;
+      return await publicReq(`/api/feed/${postId}/comments`);
     } catch (error) {
-      console.error('❌ FeedAPI.comments error:', error);
+      console.error("❌ FeedAPI.comments error:", error);
       throw error;
     }
   },
 
-  // Add comment to post (requires auth)
-  addComment: async (postId, text) => {
+  // Add comment or reply (requires auth)
+  // Pass `parentId` (or null) to create a reply.
+  addComment: async (postId, text, parentId = null) => {
     try {
-      const response = await appReq(`/api/feed/${postId}/comments`, { 
-        method: "POST", 
-        body: JSON.stringify({ text }) 
+      return await appReq(`/api/feed/${postId}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ text, parentId }),
       });
-      return response;
     } catch (error) {
-      console.error('❌ FeedAPI.addComment error:', error);
+      console.error("❌ FeedAPI.addComment error:", error);
       throw error;
     }
   },
 
   // React to post (requires auth)
+  // Server enforces single reaction per user per post and returns:
+  // { ok, myReaction, counts: { like, rocket, fire, think } }
   react: async (postId, kind) => {
     try {
-      const response = await appReq(`/api/feed/${postId}/react`, { 
-        method: "POST", 
-        body: JSON.stringify({ kind }) 
+      return await appReq(`/api/feed/${postId}/react`, {
+        method: "POST",
+        body: JSON.stringify({ kind }),
       });
-      return response;
     } catch (error) {
-      console.error('❌ FeedAPI.react error:', error);
+      console.error("❌ FeedAPI.react error:", error);
       throw error;
     }
   },
@@ -74,12 +74,11 @@ export const FeedAPI = {
   // Delete comment (requires auth)
   deleteComment: async (postId, commentId) => {
     try {
-      const response = await appReq(`/api/feed/${postId}/comments/${commentId}`, { 
-        method: "DELETE" 
+      return await appReq(`/api/feed/${postId}/comments/${commentId}`, {
+        method: "DELETE",
       });
-      return response;
     } catch (error) {
-      console.error('❌ FeedAPI.deleteComment error:', error);
+      console.error("❌ FeedAPI.deleteComment error:", error);
       throw error;
     }
   },
@@ -87,13 +86,10 @@ export const FeedAPI = {
   // Delete post (requires auth)
   deletePost: async (postId) => {
     try {
-      const response = await appReq(`/api/feed/${postId}`, { 
-        method: "DELETE" 
-      });
-      return response;
+      return await appReq(`/api/feed/${postId}`, { method: "DELETE" });
     } catch (error) {
-      console.error('❌ FeedAPI.deletePost error:', error);
+      console.error("❌ FeedAPI.deletePost error:", error);
       throw error;
     }
-  }
+  },
 };

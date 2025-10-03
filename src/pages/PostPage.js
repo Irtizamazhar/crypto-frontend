@@ -1,11 +1,11 @@
+// src/pages/PostPage.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  PlusCircle, Send, Tag, Link as LinkIcon, Smile,
+  PlusCircle, Send, Link as LinkIcon, Smile,
   ThumbsUp, Rocket, Flame, MessageCircle, Share2, Bookmark,
   MoreHorizontal, Trash2, TrendingUp, TrendingDown,
-  DollarSign, Clock, Eye, Sparkles, Verified, Zap,
-  X
+  DollarSign, Clock, Eye, Sparkles, Verified, Zap, X
 } from "lucide-react";
 import { FeedAPI } from "../services/feed";
 import { useAuth } from "../context/AuthContext";
@@ -22,107 +22,254 @@ const ago = (ts) => { const s = Math.floor((Date.now() - ts)/1000);
   if (d<7) return `${d}d`; const w=Math.floor(d/7); return `${w}w`; };
 
 /* ------------------------------ Reactions ------------------------------ */
+// Single reaction per user: like/rocket/fire/think
+const REACTION_META = {
+  like:   { Icon: ThumbsUp, label: "Like",   active: "text-blue-400",   hover: "hover:bg-blue-500/10" },
+  rocket: { Icon: Rocket,   label: "Rocket", active: "text-purple-400", hover: "hover:bg-purple-500/10" },
+  fire:   { Icon: Flame,    label: "Fire",   active: "text-rose-400",   hover: "hover:bg-rose-500/10" },
+  think:  { Icon: Smile,    label: "Think",  active: "text-amber-400",  hover: "hover:bg-amber-500/10" },
+};
+
 function ReactionBar({ post, onReact }) {
-  const items = [
-    { key: "like",   icon: <ThumbsUp className="w-4 h-4"/>, label: "Like" },
-    { key: "rocket", icon: <Rocket className="w-4 h-4"/>,   label: "Rocket" },
-    { key: "fire",   icon: <Flame className="w-4 h-4"/>,    label: "Fire" },
-    { key: "think",  icon: <Smile className="w-4 h-4"/>,    label: "Think" },
-  ];
   return (
     <div className="flex items-center justify-between p-3 sm:p-4 border-t border-gray-700/50">
       <div className="flex items-center gap-0 sm:gap-1">
-        {items.map(r=> (
-          <button key={r.key} onClick={()=>onReact(post, r.key)}
-            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl hover:bg-gray-700/50 border border-transparent hover:border-gray-600 group relative"
-          >
-            <div className="text-gray-400 group-hover:scale-110 transition-transform text-sm sm:text-base">{r.icon}</div>
-            <span className="text-xs sm:text-sm font-medium text-gray-400">{post.reactions?.[r.key] || 0}</span>
-          </button>
-        ))}
+        {Object.entries(REACTION_META).map(([key, meta]) => {
+          const Icon = meta.Icon;
+          const isActive = post.myReaction === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onReact(post, key)}
+              className={cls(
+                "flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl border border-transparent group select-none",
+                meta.hover,
+                isActive ? "bg-white/5 ring-1 ring-white/10" : "hover:border-gray-600"
+              )}
+              title={meta.label}
+            >
+              <Icon className={cls("w-4 h-4 transition-transform group-hover:scale-110",
+                isActive ? meta.active : "text-gray-400")} />
+              <span className={cls("text-xs sm:text-sm font-medium",
+                isActive ? "text-white" : "text-gray-400")}>
+                {post.reactions?.[key] ?? 0}
+              </span>
+            </button>
+          );
+        })}
       </div>
       <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-gray-400">
-        <div className="flex items-center gap-1"><Eye className="w-3 h-3 sm:w-4 sm:h-4"/><span className="hidden sm:inline">{post.views || 0}</span></div>
-        <div className="flex items-center gap-1"><MessageCircle className="w-3 h-3 sm:w-4 sm:h-4"/><span className="hidden sm:inline">{post.comment_count || 0}</span></div>
+        <div className="flex items-center gap-1">
+          <Eye className="w-3 h-3 sm:w-4 sm:h-4"/>
+          <span className="hidden sm:inline">{post.views || 0}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <MessageCircle className="w-3 h-3 sm:w-4 sm:h-4"/>
+          {/* use server-tracked count so it's exact even if thread not opened */}
+          <span className="hidden sm:inline">{post.comment_count || 0}</span>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ------------------------------ Comments ------------------------------ */
+/* ------------------------------ Comments (with replies) ------------------------------ */
 function CommentThread({ postId, canDelete, onLocalCountChange }) {
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState([]); // roots, each with replies[]
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(()=>{ if(open && comments.length===0){ setLoading(true); FeedAPI.comments(postId).then(setComments).catch(()=>{}).finally(()=>setLoading(false)); }},[open, postId, comments.length]);
+  // reply state
+  const [replyTo, setReplyTo] = useState(null);
+  const [replyText, setReplyText] = useState("");
+  const [replying, setReplying] = useState(false);
+
+  useEffect(() => {
+    if (open && comments.length === 0) {
+      setLoading(true);
+      FeedAPI.comments(postId)
+        .then((data) => setComments(Array.isArray(data) ? data : []))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [open, postId, comments.length]);
+
+  const totalDisplayed = comments.reduce((acc, c) => acc + 1 + ((c.replies && c.replies.length) || 0), 0);
 
   const add = async () => {
     if (!text.trim() || submitting) return;
     setSubmitting(true);
     try {
-      const { id } = await FeedAPI.addComment(postId, text.trim());
-      setComments(prev => [...prev, { id, user:"You", text:text.trim(), ts:Date.now(), user_id:1, canDelete:true }]);
+      const { id } = await FeedAPI.addComment(postId, text.trim(), null);
+      setComments(prev => [...prev, { id, user: "You", text: text.trim(), ts: Date.now(), replies: [], user_id: 1, canDelete: true }]);
       onLocalCountChange(1);
       setText("");
-    } catch (e) { alert("Failed to add comment: " + e.message); } finally { setSubmitting(false); }
+    } catch (e) {
+      alert("Failed to add comment: " + e.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
-  const del = async (cid) => {
-    try { await FeedAPI.deleteComment(postId, cid); setComments(prev => prev.filter(c => c.id!==cid)); onLocalCountChange(-1); }
-    catch (e) { alert("Failed to delete comment: " + e.message); }
+
+  const addReply = async (parentId) => {
+    if (!replyText.trim() || replying) return;
+    setReplying(true);
+    try {
+      const { id } = await FeedAPI.addComment(postId, replyText.trim(), parentId);
+      setComments(prev => prev.map(c => {
+        if (c.id === parentId) return { ...c, replies: [...(c.replies || []), { id, user:"You", text: replyText.trim(), ts: Date.now(), user_id: 1, canDelete: true, parent_id: parentId }] };
+        return c;
+      }));
+      onLocalCountChange(1);
+      setReplyText("");
+      setReplyTo(null);
+    } catch (e) {
+      alert("Failed to reply: " + e.message);
+    } finally {
+      setReplying(false);
+    }
+  };
+
+  const del = async (cid, parentId = null) => {
+    try {
+      await FeedAPI.deleteComment(postId, cid);
+      if (parentId) {
+        setComments(prev => prev.map(c => c.id === parentId ? { ...c, replies: (c.replies || []).filter(r => r.id !== cid) } : c));
+      } else {
+        setComments(prev => prev.filter(c => c.id !== cid));
+      }
+      onLocalCountChange(-1);
+    } catch (e) {
+      alert("Failed to delete comment: " + e.message);
+    }
   };
 
   return (
     <div className="border-t border-gray-700/50">
-      <button onClick={()=>setOpen(v=>!v)} className="w-full px-3 sm:px-4 py-2 sm:py-3 text-left hover:bg-gray-700/30">
+      <button onClick={() => setOpen(v => !v)} className="w-full px-3 sm:px-4 py-2 sm:py-3 text-left hover:bg-gray-700/30">
         <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-300">
-          <MessageCircle className="w-3 h-3 sm:w-4 sm:h-4"/><span>{open ? "Hide" : "Show"} Comments</span>
-          <span className="ml-auto bg-gray-600 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs">{comments.length}</span>
+          <MessageCircle className="w-3 h-3 sm:w-4 sm:h-4" />
+          <span>{open ? "Hide" : "Show"} Comments</span>
+          <span className="ml-auto bg-gray-600 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs">{totalDisplayed}</span>
         </div>
       </button>
       <AnimatePresence>
         {open && (
-          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} className="overflow-hidden">
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
             <div className="p-3 sm:p-4 space-y-3 sm:space-y-4 bg-gray-800/20">
+              {/* new comment */}
               <div className="flex gap-2 sm:gap-3">
-                <img src={avatar("you")} alt="You" className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl"/>
+                <img src={avatar("you")} alt="You" className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl" />
                 <div className="flex-1 flex gap-1 sm:gap-2">
                   <input
-                    value={text} onChange={(e)=>setText(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&add()}
-                    placeholder="Add a comment…" disabled={submitting}
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && add()}
+                    placeholder="Add a comment…"
+                    disabled={submitting}
                     className="flex-1 px-3 sm:px-4 py-2 sm:py-3 bg-gray-700/50 border border-gray-600 rounded-lg sm:rounded-xl text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none text-sm sm:text-base"
                   />
-                  <button onClick={add} disabled={!text.trim()||submitting}
+                  <button
+                    onClick={add}
+                    disabled={!text.trim() || submitting}
                     className="px-3 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-lg sm:rounded-xl font-medium"
                   >
-                    {submitting ? <div className="w-3 h-3 sm:w-4 sm:h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <Send className="w-3 h-3 sm:w-4 sm:h-4"/>}
+                    {submitting ? (
+                      <div className="w-3 h-3 sm:w-4 sm:h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Send className="w-3 h-3 sm:w-4 sm:h-4" />
+                    )}
                   </button>
                 </div>
               </div>
 
+              {/* list */}
               {loading ? (
-                <div className="flex justify-center py-3 sm:py-4"><div className="w-4 h-4 sm:w-6 sm:h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"/></div>
+                <div className="flex justify-center py-3 sm:py-4">
+                  <div className="w-4 h-4 sm:w-6 sm:h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                </div>
               ) : (
                 <div className="space-y-2 sm:space-y-3">
-                  {comments.map(c=> (
-                    <motion.div key={c.id} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} className="flex gap-2 sm:gap-3 group">
-                      <img src={avatar(c.user)} alt="" className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl mt-0.5 sm:mt-1"/>
+                  {comments.map((c) => (
+                    <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-2 sm:gap-3 group">
+                      <img src={avatar(c.user)} alt="" className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl mt-0.5 sm:mt-1" />
                       <div className="flex-1 bg-gray-700/30 rounded-lg sm:rounded-xl p-3 sm:p-4">
                         <div className="flex items-center justify-between mb-1 sm:mb-2">
                           <div className="flex items-center gap-1 sm:gap-2">
                             <span className="font-semibold text-white text-xs sm:text-sm">{c.user}</span>
-                            {c.user==="You" && <Verified className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-blue-400"/>}
+                            {c.user === "You" && <Verified className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-blue-400" />}
                             <span className="text-xs text-gray-400">• {ago(c.ts)}</span>
                           </div>
-                          {(c.canDelete || canDelete) && (
-                            <button onClick={()=>del(c.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded-lg">
-                              <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-gray-400"/>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => { setReplyTo(c.id); setReplyText(""); }}
+                              className="px-2 py-1 text-xs rounded-lg hover:bg-white/5 text-gray-400"
+                            >
+                              Reply
                             </button>
-                          )}
+                            {(c.canDelete || canDelete) && (
+                              <button onClick={() => del(c.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded-lg">
+                                <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-gray-400" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-gray-200 text-xs sm:text-sm leading-relaxed">{c.text}</p>
+
+                        {/* replies */}
+                        {!!(c.replies && c.replies.length) && (
+                          <div className="mt-3 space-y-2 pl-3 sm:pl-4 border-l border-gray-600/60">
+                            {c.replies.map((r) => (
+                              <div key={r.id} className="flex gap-2 sm:gap-3">
+                                <img src={avatar(r.user)} alt="" className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg sm:rounded-xl mt-0.5" />
+                                <div className="flex-1 bg-gray-700/20 rounded-lg sm:rounded-xl p-2.5 sm:p-3">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-white text-xs sm:text-sm">{r.user}</span>
+                                      <span className="text-[11px] text-gray-400">• {ago(r.ts)}</span>
+                                    </div>
+                                    {(r.canDelete || canDelete) && (
+                                      <button onClick={() => del(r.id, c.id)} className="p-1 hover:bg-gray-600 rounded-lg">
+                                        <Trash2 className="w-3 h-3 text-gray-400" />
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="text-gray-200 text-xs sm:text-sm">{r.text}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* reply input */}
+                        {replyTo === c.id && (
+                          <div className="mt-3 flex items-center gap-2 pl-3 sm:pl-4">
+                            <input
+                              value={replyText}
+                              onChange={(e) => setReplyText(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && addReply(c.id)}
+                              placeholder="Write a reply…"
+                              className="flex-1 px-3 py-2 bg-gray-700/40 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none text-sm"
+                            />
+                            <button
+                              onClick={() => addReply(c.id)}
+                              disabled={!replyText.trim() || replying}
+                              className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-sm text-white"
+                            >
+                              {replying ? "…" : "Reply"}
+                            </button>
+                            <button onClick={() => { setReplyTo(null); setReplyText(""); }} className="px-2 py-2 rounded-lg text-gray-400 hover:text-white text-sm">
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -140,8 +287,8 @@ function CommentThread({ postId, canDelete, onLocalCountChange }) {
 function FeedCard({ post, onReact, onDeletePost, onLocalMutate }) {
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null);
-  const isTrade = post.type==="trade";
-  const isNews  = post.type==="news";
+  const isTrade = post.type === "trade";
+  const isNews  = post.type === "news";
 
   // close the three-dots menu on outside click / Esc
   useEffect(() => {
@@ -341,6 +488,7 @@ export default function PostPage() {
       user_id:user?.id,
       ts:Date.now(),
       reactions:{ like:0, rocket:0, fire:0, think:0 },
+      myReaction: null,
       comment_count:0,
       views:0,
       canDelete:true,
@@ -348,13 +496,13 @@ export default function PostPage() {
     }, ...prev]);
   };
 
+  // Single-reaction UI: use server response to update counts + myReaction
   const react = async (post, key) => {
     try {
-      await FeedAPI.react(post.id, key);
-      setFeed(prev => prev.map(p => p.id===post.id
-        ? { ...p, reactions:{ ...(p.reactions||{}), [key]:(p.reactions?.[key]||0)+1 } }
-        : p
-      ));
+      const res = await FeedAPI.react(post.id, key); // { ok, myReaction, counts }
+      setFeed(prev =>
+        prev.map(p => p.id === post.id ? { ...p, reactions: res.counts, myReaction: res.myReaction } : p)
+      );
     } catch (e) {
       alert("Failed to react: " + e.message);
     }
@@ -414,15 +562,15 @@ export default function PostPage() {
             )}
           </AnimatePresence>
 
-          {cursor && (
-            <div className="flex justify-center pt-6 sm:pt-8">
-              <button onClick={()=>load(true, cursor)} disabled={loadingMore}
-                className="px-6 sm:px-8 py-2.5 sm:py-3 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white rounded-lg sm:rounded-xl font-medium flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base"
-              >
-                {loadingMore ? <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"/> : (<><PlusCircle className="w-4 h-4 sm:w-5 sm:h-5"/> Load More</>)}
-              </button>
-            </div>
-          )}
+        {cursor && (
+          <div className="flex justify-center pt-6 sm:pt-8">
+            <button onClick={()=>load(true, cursor)} disabled={loadingMore}
+              className="px-6 sm:px-8 py-2.5 sm:py-3 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white rounded-lg sm:rounded-xl font-medium flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base"
+            >
+              {loadingMore ? <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"/> : (<><PlusCircle className="w-4 h-4 sm:w-5 sm:h-5"/> Load More</>)}
+            </button>
+          </div>
+        )}
         </div>
       </div>
 

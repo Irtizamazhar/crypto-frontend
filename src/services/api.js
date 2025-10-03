@@ -1,5 +1,3 @@
-// src/services/api.js
-
 // --- API base ---------------------------------------------------------------
 export const APP_API =
   (process.env.REACT_APP_API_URL?.replace(/\/$/, "")) || "http://localhost:4000";
@@ -138,7 +136,7 @@ export async function publicReq(path, options = {}) {
 
 // --- Auth API ---------------------------------------------------------------
 export const AuthAPI = {
-  // ✅ UPDATED: accept { referralCode } and forward it to backend
+  // ✅ accepts { referralCode }
   async register({ name, email, password, referralCode }) {
     const body = { name, email, password };
     if (referralCode) body.referralCode = referralCode;
@@ -329,6 +327,7 @@ function normalizeTicker(t) {
 }
 
 export async function fetchMarket({ page = 1, per_page = 50, signal } = {}) {
+  // NOTE: Your proxy path is used here as `ticker24h` on purpose (kept consistent with your codebase)
   const tickers = await getJson(`${PROXY}/ticker24h`, { signal });
   const usdt = tickers.filter((t) => /USDT$/.test(t.symbol));
   const clean = usdt.filter((t) => !/(UPUSDT|DOWNUSDT|BULLUSDT|BEARUSDT|[0-9]SUSDT|[0-9]LUSDT)$/i.test(t.symbol));
@@ -338,31 +337,64 @@ export async function fetchMarket({ page = 1, per_page = 50, signal } = {}) {
   return slice.map(normalizeTicker);
 }
 
-export async function searchCoins(query, { signal } = {}) {
-  const info = await getExchangeInfo({ signal });
-  const q = String(query || "").toLowerCase();
-  const seen = new Set();
-  const coins = [];
-  for (const s of info.symbols || []) {
-    if (!/USDT$/.test(s.symbol)) continue;
-    const base = s.baseAsset || "";
-    if (!base || seen.has(base)) continue;
-    if (base.toLowerCase().includes(q)) {
-      seen.add(base);
-      coins.push({
-        id: base.toLowerCase(),
-        name: base,
-        symbol: base.toUpperCase(),
-        thumb: iconFor(base),
-      });
-      if (coins.length >= 10) break;
+/**
+ * 🔎 Coin Search (for navbar SearchBar)
+ * - Returns an ARRAY of results, not { coins: [...] }
+ * - Shape: { id, symbol, name, image, market_cap_rank }
+ * - Uses cached exchangeInfo (Binance), filters USDT pairs by baseAsset
+ */
+export async function searchCoins(query, { limit = 12, signal } = {}) {
+  try {
+    const info = await getExchangeInfo({ signal });
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return [];
+
+    const seen = new Set();
+    const scored = [];
+
+    for (const s of info.symbols || []) {
+      if (!/USDT$/i.test(s.symbol)) continue;
+      const base = (s.baseAsset || "").toString();
+      if (!base) continue;
+      const id = base.toLowerCase();
+      if (seen.has(id)) continue;
+
+      const name = base; // exchangeInfo doesn't have descriptive names; use base
+      const symbol = base.toUpperCase();
+
+      // scoring: startsWith > includes
+      const baseL = base.toLowerCase();
+      let score = -1;
+      if (baseL === q) score = 100;
+      else if (baseL.startsWith(q)) score = 80;
+      else if (baseL.includes(q)) score = 50;
+
+      if (score >= 0) {
+        seen.add(id);
+        scored.push({
+          score,
+          item: {
+            id,
+            symbol,
+            name,
+            image: iconFor(base),     // <-- image key used by SearchBar
+            market_cap_rank: undefined,
+          }
+        });
+      }
     }
+
+    scored.sort((a, b) => b.score - a.score || a.item.symbol.localeCompare(b.item.symbol));
+    return scored.slice(0, limit).map(s => s.item);
+  } catch (e) {
+    console.error("searchCoins error:", e);
+    return [];
   }
-  return { coins };
 }
 
 export async function fetchCoin(id, { signal } = {}) {
   const sym = String(id || "").toUpperCase() + "USDT";
+  // NOTE: Your code used `/ticker24hr` here already; kept as-is to match your proxy.
   const t = await getJson(`${PROXY}/ticker24hr?symbol=${encodeURIComponent(sym)}`, { signal });
   return normalizeTicker(t);
 }
@@ -406,6 +438,7 @@ export async function fetchCoinHistory7d(id, { signal } = {}) {
 }
 
 export async function fetchGlobalFromMarket({ signal } = {}) {
+  // NOTE: kept `/ticker24h` to match your earlier usage; adjust if your proxy needs `/ticker24hr`
   const tickers = await getJson(`${PROXY}/ticker24h`, { signal });
   const usdt = tickers.filter((t) => /USDT$/.test(t.symbol));
   let totalQuote = 0, btcQuote = 0;
@@ -687,7 +720,6 @@ export async function fetchHuobiNewListings() {
   }
 }
 
-// Combine all
 // --- Normalize Helper -------------------------------------------------------
 function normalizeListing(item, exchange) {
   return {

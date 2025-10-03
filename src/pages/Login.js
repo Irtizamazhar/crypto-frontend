@@ -1,41 +1,51 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { AuthAPI } from "../services/auth";
-import { 
-  FXStyles, 
-  StarsBackground, 
-  AuthSideArt, 
-  PasswordInput, 
-  SocialLoginButtons, 
-  AuthCard, 
-  SubmitButton, 
-  ErrorMessage 
+import {
+  FXStyles,
+  StarsBackground,
+  AuthSideArt,
+  PasswordInput,
+  SocialLoginButtons,
+  AuthCard,
+  SubmitButton,
+  ErrorMessage
 } from "../components/AuthShared";
 
 export default function Login() {
   const nav = useNavigate();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState(localStorage.getItem("remember_email") || "");
+  // Start empty; do NOT prefill from localStorage.
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(!!localStorage.getItem("remember_email"));
+
+  // Only store on submit if checked.
+  const [rememberMe, setRememberMe] = useState(false);
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  // Keep localStorage in sync with the toggle (optional UX nicety).
   useEffect(() => {
-    if (rememberMe && email) localStorage.setItem("remember_email", email);
-    if (!rememberMe) localStorage.removeItem("remember_email");
-  }, [rememberMe, email]);
+    if (!rememberMe) {
+      localStorage.removeItem("remember_email");
+    }
+  }, [rememberMe]);
 
   async function onSubmit(e) {
     e.preventDefault();
-    setErr(""); 
+    setErr("");
     setBusy(true);
-    
+
     try {
       const u = await login(email.trim(), password);
+      if (rememberMe) {
+        localStorage.setItem("remember_email", email.trim());
+      } else {
+        localStorage.removeItem("remember_email");
+      }
       if (u) nav("/", { replace: true });
     } catch (e) {
       setErr(e?.message || "Login failed. Please check your credentials.");
@@ -53,8 +63,8 @@ export default function Login() {
       <AuthSideArt />
 
       {/* Right: Form */}
-      <AuthCard 
-        title="Sign in" 
+      <AuthCard
+        title="Sign in"
         subtitle="Welcome back! Please enter your details."
       >
         <ErrorMessage message={err} />
@@ -71,9 +81,15 @@ export default function Login() {
               <input
                 className="w-full pl-10 pr-4 py-3.5 rounded-lg bg-slate-900/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200 text-sm sm:text-base"
                 type="email"
+                name="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                inputMode="email"
                 required
               />
             </div>
@@ -81,11 +97,12 @@ export default function Login() {
 
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Password</label>
-            <PasswordInput 
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               showPassword={showPassword}
               setShowPassword={setShowPassword}
+              inputProps={{ autoComplete: "current-password" }}
             />
           </div>
 

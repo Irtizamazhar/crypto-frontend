@@ -377,7 +377,7 @@ export default function Home() {
       )}
 
       {/* Extra bottom padding so the global dock never overlaps content */}
-      <div className="px-4 py-8 space-y-10 pb-[calc(var(--mobile-dock-h,0px)+env(safe-area-inset-bottom)+12px)] md:pb-8">
+      <div className="px-4 py-8 space-y-10 pb-[env(safe-area-inset-bottom)] md:pb-0">
         {/* HERO */}
         <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-4">
           <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight">

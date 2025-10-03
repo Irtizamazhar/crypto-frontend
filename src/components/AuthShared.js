@@ -114,27 +114,49 @@ export function AuthSideArt() {
   );
 }
 
-/* ---------- Password Input Component ---------- */
-export function PasswordInput({ value, onChange, placeholder = "••••••••", showPassword, setShowPassword }) {
+/* ---------- Password Input Component (fixed) ---------- */
+export function PasswordInput({
+  value,
+  onChange,
+  placeholder = "••••••••",
+  showPassword,
+  setShowPassword,
+  inputProps = {},
+}) {
+  // ensure autocorrect / capitalization are off and autocomplete is set
+  const mergedInputProps = {
+    autoComplete: "current-password",
+    autoCorrect: "off",
+    autoCapitalize: "none",
+    spellCheck: false,
+    ...inputProps,
+  };
+
   return (
     <div className="relative">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+      {/* left icon */}
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c.943 0 1.839.186 2.652.525a3 3 0 10-5.304 0A8.963 8.963 0 0112 11z" />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
         </svg>
       </span>
+
+      {/* input with extra right padding so the eye isn't clipped */}
       <input
         className="w-full pl-10 pr-12 py-3.5 rounded-lg bg-slate-900/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-200"
         type={showPassword ? "text" : "password"}
         placeholder={placeholder}
         value={value}
         onChange={onChange}
-        required
+        style={{ paddingRight: "3rem" }}
+        {...mergedInputProps}
       />
+
+      {/* eye toggle button */}
       <button
         type="button"
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors p-1"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-100 transition-colors p-2 rounded-md hover:bg-white/5 focus:outline-none"
         onClick={() => setShowPassword(!showPassword)}
         aria-label={showPassword ? "Hide password" : "Show password"}
       >
@@ -156,9 +178,9 @@ export function PasswordInput({ value, onChange, placeholder = "•••••�
 /* ---------- Social Login Buttons ---------- */
 export function SocialLoginButtons() {
   const socialProviders = [
-    { 
-      name: "Google", 
-      url: "/auth/google", 
+    {
+      name: "Google",
+      url: "/auth/google",
       icon: (
         <svg className="w-5 h-5" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -168,18 +190,18 @@ export function SocialLoginButtons() {
         </svg>
       )
     },
-    { 
-      name: "Facebook", 
-      url: "/auth/facebook", 
+    {
+      name: "Facebook",
+      url: "/auth/facebook",
       icon: (
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#1877F2">
           <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
         </svg>
       )
     },
-    { 
-      name: "Apple", 
-      url: "/auth/apple", 
+    {
+      name: "Apple",
+      url: "/auth/apple",
       icon: (
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="#000000">
           <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
@@ -270,7 +292,7 @@ export function SubmitButton({ busy, children, disabled = false }) {
 /* ---------- Error Message ---------- */
 export function ErrorMessage({ message }) {
   if (!message) return null;
-  
+
   return (
     <div className="mt-5 p-3.5 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-300 animate-pulse">
       {message}

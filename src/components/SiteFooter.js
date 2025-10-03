@@ -1,3 +1,4 @@
+// src/components/SiteFooter.jsx
 import React from "react";
 import { NavLink } from "react-router-dom";
 import { Github, Twitter, Mail, ChevronRight, ExternalLink } from "lucide-react";
@@ -6,15 +7,15 @@ export default function SiteFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="mt-16">
-      {/* Enhanced CTA Banner */}
+    <footer className="mt-12 overflow-hidden">
+      {/* CTA Banner */}
       <div className="mx-auto max-w-7xl px-4">
         <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-900/20 p-8 shadow-2xl shadow-cyan-500/10">
-          {/* Enhanced background effects */}
+          {/* bg effects */}
           <div className="pointer-events-none absolute -top-32 -left-32 h-80 w-80 rounded-full bg-cyan-500/10 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
           <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-64 w-64 rounded-full bg-cyan-400/5 blur-3xl" />
-          
+
           <div className="relative flex flex-col items-start gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-2">
               <h3 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
@@ -43,10 +44,10 @@ export default function SiteFooter() {
         </div>
       </div>
 
-      {/* Enhanced Footer Body */}
+      {/* Footer Body */}
       <div className="mt-6 border-t border-white/10 bg-gradient-to-b from-slate-900 to-slate-950">
-        <div className="mx-auto max-w-7xl px-4 py-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Enhanced Brand Section */}
+        <div className="mx-auto max-w-7xl px-4 py-10 md:py-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Brand */}
           <div className="col-span-2 lg:col-span-1 space-y-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg flex items-center justify-center">
@@ -63,23 +64,23 @@ export default function SiteFooter() {
               Advanced tools for market analysis, strategy development, and portfolio tracking — all designed for crypto enthusiasts.
             </p>
             <div className="flex items-center gap-2">
-              <a 
-                className="rounded-xl p-2.5 bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-500/30 transition-all duration-200 group" 
-                href="#" 
+              <a
+                className="rounded-xl p-2.5 bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-500/30 transition-all duration-200 group"
+                href="#"
                 aria-label="Twitter"
               >
                 <Twitter size={18} className="text-slate-400 group-hover:text-cyan-400" />
               </a>
-              <a 
-                className="rounded-xl p-2.5 bg-white/5 hover:bg-slate-500/20 border border-white/10 hover:border-slate-400/30 transition-all duration-200 group" 
-                href="#" 
+              <a
+                className="rounded-xl p-2.5 bg-white/5 hover:bg-slate-500/20 border border-white/10 hover:border-slate-400/30 transition-all duration-200 group"
+                href="#"
                 aria-label="GitHub"
               >
                 <Github size={18} className="text-slate-400 group-hover:text-slate-300" />
               </a>
-              <a 
-                className="rounded-xl p-2.5 bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 transition-all duration-200 group" 
-                href="mailto:hello@cryptosense.app" 
+              <a
+                className="rounded-xl p-2.5 bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 transition-all duration-200 group"
+                href="mailto:hello@cryptosense.app"
                 aria-label="Email"
               >
                 <Mail size={18} className="text-slate-400 group-hover:text-red-400" />
@@ -87,7 +88,7 @@ export default function SiteFooter() {
             </div>
           </div>
 
-          {/* Enhanced App Links */}
+          {/* Platform */}
           <div className="space-y-4">
             <div className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Platform</div>
             <ul className="space-y-3">
@@ -100,10 +101,10 @@ export default function SiteFooter() {
                 { name: "Community Feed", path: "/feed" },
                 { name: "Dashboard", path: "/dashboard" },
                 { name: "Watchlist", path: "/watchlist" },
-                { name: "Price Alerts", path: "/alerts" }
+                { name: "Price Alerts", path: "/alerts" },
               ].map((item) => (
                 <li key={item.name}>
-                  <NavLink 
+                  <NavLink
                     className="text-sm text-slate-400 hover:text-cyan-400 transition-colors duration-200 flex items-center gap-1 group"
                     to={item.path}
                   >
@@ -115,7 +116,7 @@ export default function SiteFooter() {
             </ul>
           </div>
 
-          {/* Enhanced Resources */}
+          {/* Resources */}
           <div className="space-y-4">
             <div className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Resources</div>
             <ul className="space-y-3">
@@ -125,10 +126,10 @@ export default function SiteFooter() {
                 { name: "Trading Guides", href: "#" },
                 { name: "Market Analysis", href: "#" },
                 { name: "Community", href: "#" },
-                { name: "Support Center", href: "#" }
+                { name: "Support Center", href: "#" },
               ].map((item) => (
                 <li key={item.name}>
-                  <a 
+                  <a
                     className="text-sm text-slate-400 hover:text-cyan-400 transition-colors duration-200 flex items-center gap-1 group"
                     href={item.href}
                   >
@@ -140,7 +141,7 @@ export default function SiteFooter() {
             </ul>
           </div>
 
-          {/* Enhanced Legal Section */}
+          {/* Notice */}
           <div className="col-span-2 lg:col-span-1">
             <div className="rounded-2xl bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-white/10 p-6 backdrop-blur-sm">
               <div className="flex items-center gap-3 mb-3">
@@ -150,7 +151,7 @@ export default function SiteFooter() {
                 <div className="text-sm font-semibold text-slate-200">Important Notice</div>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                All market data and tools are provided for educational and research purposes only. 
+                All market data and tools are provided for educational and research purposes only.
                 This is not financial advice. Cryptocurrency trading involves substantial risk.
               </p>
               <div className="flex items-center justify-between pt-3 border-t border-white/10">
@@ -164,9 +165,9 @@ export default function SiteFooter() {
           </div>
         </div>
 
-        {/* Bottom Bar */}
+        {/* Bottom Bar (gap fix: reduced padding + safe-area only) */}
         <div className="border-t border-white/5">
-          <div className="mx-auto max-w-7xl px-4 py-4">
+          <div className="mx-auto max-w-7xl px-4 pt-3 pb-[max(0px,env(safe-area-inset-bottom))]">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
               <div className="flex items-center gap-4">
                 <span>Built for crypto enthusiasts</span>

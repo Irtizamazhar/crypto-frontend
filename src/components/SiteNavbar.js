@@ -1,4 +1,3 @@
-// src/components/SiteNavbar.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,6 +9,8 @@ import LoaderBar from "./LoaderBar";
 import SearchBar from "./SearchBar";
 import { useLoading } from "../context/LoadingContext";
 import { useAuth } from "../context/AuthContext";
+/* 🔌 NEW: coin search API */
+import { searchCoins } from "../services/api";
 
 /* helpers */
 function initialsFromName(n) {
@@ -43,7 +44,8 @@ function UserMenuDesktop() {
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         onClick={() => nav("/login")}
-        className="rounded-lg px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-medium shadow-lg hover:shadow-indigo-500/25 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+        /* keep in one row, consistent height */
+        className="inline-flex items-center justify-center h-10 px-4 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-medium shadow-lg hover:shadow-indigo-500/25 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 whitespace-nowrap leading-none"
       >
         Sign In
       </motion.button>
@@ -188,6 +190,20 @@ export default function SiteNavbar() {
     </NavLink>
   );
 
+  /* 🔌 If you ever wire SearchBar callbacks, use /trade/:id to match CoinCard */
+  const handleSearchSelect = (item) => {
+    if (!item) return;
+    const id = (item.id || item.symbol || item.name || "").toString().toLowerCase();
+    if (!id) return;
+    nav(`/trade/${encodeURIComponent(id)}`);
+  };
+
+  const handleSearchSubmit = (q) => {
+    const query = (q || "").trim();
+    if (!query) return;
+    nav(`/search?q=${encodeURIComponent(query)}`);
+  };
+
   return (
     <header className="sticky top-0 z-[70]">
       <LoaderBar active={_count > 0} />
@@ -239,7 +255,15 @@ export default function SiteNavbar() {
 
           {/* Desktop search + user */}
           <div className="hidden md:block max-w-md w-full mx-2 lg:mx-4">
-            <SearchBar variant="nav" placeholder="Search cryptocurrencies…" />
+            <SearchBar
+              variant="nav"
+              placeholder="Search cryptocurrencies…"
+              /* These props are safe to pass even if SearchBar doesn't use them */
+              fetcher={searchCoins}
+              onSelect={handleSearchSelect}
+              onPick={handleSearchSelect}
+              onSubmit={handleSearchSubmit}
+            />
           </div>
           <div className="hidden md:block">
             <UserMenuDesktop />
